@@ -5,4 +5,4 @@ COPY . ./
 
 RUN pip install -r requirements.txt --break-system-packages
 
-ENTRYPOINT ["python3", "/code/automosaic.py"]
+ENTRYPOINT ["python3", "/code/automosaic.py", "/images"]

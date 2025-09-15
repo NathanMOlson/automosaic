@@ -8,4 +8,4 @@ COPY . ./
 
 RUN pip install -r requirements.txt --break-system-packages
 
-ENTRYPOINT ["python3", "/storage/save_images.py"]
+ENTRYPOINT ["python3", "/storage/save_images.py", "/images"]
