@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from tempfile import mkstemp
 import os
+import shutil
 app = Flask(__name__)
 
 @app.route("/")
@@ -17,7 +18,9 @@ def upload():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    filepath = os.path.join("/images", mkstemp(os.path.splitext(file.filename)[1])[1])
-    file.save(filepath)
+    fd, filepath = mkstemp(os.path.splitext(file.filename)[1])
+    with os.fdopen(fd, 'wb') as f:
+        file.save(f)
+    shutil.move(filepath, "/images")
 
     return jsonify({'message': f'File {file.filename} saved to {filepath}'}), 200

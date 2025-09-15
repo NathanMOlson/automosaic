@@ -13,11 +13,15 @@ services:
     build: ./automosaic
     volumes:
       - image_dir:/images
+    environment:
+      - PYTHONUNBUFFERED=1
 
   storage:
     build: ./storage
     volumes:
       - image_dir:/images
+    environment:
+      - PYTHONUNBUFFERED=1
 
 volumes:
   image_dir:

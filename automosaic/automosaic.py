@@ -80,7 +80,7 @@ class EventProcessor(pyinotify.ProcessEvent):
         try:
             self.add_photo(PhotoInfo(ODM_Photo(event.pathname)))
         except ValueError:
-            print(f"Failed to add photo: {event.pathname}")
+            print(f"Failed to add photo: {event.pathname} missing metadata")
 
 
 def detect_features(filename: str) -> None:
@@ -125,6 +125,7 @@ def main() -> None:
     watch_manager = pyinotify.WatchManager()
     event_notifier = pyinotify.Notifier(watch_manager, EventProcessor(photo_dir=photo_dir))
 
+    print(f"Watching {photo_dir} for images to mosaic")
     watch_manager.add_watch(photo_dir, pyinotify.IN_CLOSE_WRITE)
     event_notifier.loop()
 

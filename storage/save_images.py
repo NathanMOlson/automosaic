@@ -20,7 +20,9 @@ def main() -> None:
     watch_manager = pyinotify.WatchManager()
     event_notifier = pyinotify.Notifier(watch_manager, EventProcessor())
 
-    watch_manager.add_watch(os.path.abspath(sys.argv[1]), pyinotify.IN_CLOSE_WRITE)
+    image_dir = os.path.abspath(sys.argv[1])
+    print(f"Watching {image_dir} for images to move to storage")
+    watch_manager.add_watch(image_dir, pyinotify.IN_CLOSE_WRITE)
     event_notifier.loop()
 
 
