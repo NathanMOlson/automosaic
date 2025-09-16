@@ -17,16 +17,20 @@ from stages.odm_app import ODMApp
 class PhotoInfo:
     def __init__(self, photo: ODM_Photo) -> None:
         if photo.filename is None or photo.utc_time is None \
-                or photo.speed_x is None or photo.speed_y is None \
                 or photo.latitude is None or photo.longitude is None:
             raise ValueError
         self.filename = photo.filename
-        self.v = np.array([photo.speed_x, photo.speed_y])
-        self.groundspeed = np.linalg.norm(self.v)
-        self.dir = self.v / self.groundspeed
         self.lat = photo.latitude
         self.lon = photo.longitude
-        self.t_utc = photo.utc_time
+        self.t_utc = photo.utc_time / 1000.0
+        self.v = None
+        self.groundspeed = None
+        self.dir = None
+        
+        if photo.speed_x is not None and photo.speed_y is not None:
+            self.v = np.array([photo.speed_x, photo.speed_y])
+            self.groundspeed = np.linalg.norm(self.v)
+            self.dir = self.v / self.groundspeed
 
 
 def approx_displacement(p1: PhotoInfo, p2: PhotoInfo) -> NDArray:
@@ -49,13 +53,30 @@ class EventProcessor(pyinotify.ProcessEvent):
 
     def check_for_orbit(self) -> bool:
         photo = self.photos[-1]
-        min_orbit_time = 2*math.pi*self.groundspeed/9.81  # assume 45 deg max bank
+
+        if photo.v is None:
+            print(f"{photo.filename} has no velocity metadata, attempting to approximate it")
+            for other in reversed(self.photos):
+                if photo.t_utc - other.t_utc > 2 and photo.t_utc - other.t_utc < 20:
+                    photo.v = approx_displacement(other, photo)/(photo.t_utc - other.t_utc)
+                    photo.groundspeed = np.linalg.norm(photo.v)
+                    photo.dir = photo.v / photo.groundspeed
+                    break
+                    
+        if photo.v is None:
+            print(f"{photo.filename} has no velocity metadata, ignoring")
+            return False
+        
+        min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         start_index = None
+
         for i in range(len(self.photos) - 2, -1, -1):
             other = self.photos[i]
+            if other.v is None:
+                continue
             if photo.t_utc - other.t_utc < min_orbit_time:
                 continue
-            if np.dot(photo.dir, other.dir < 0.7):
+            if np.dot(photo.dir, other.dir) < 0.7:
                 continue
             d = approx_displacement(other, photo)
             if np.dot(photo.dir, d) <= 0:
@@ -72,15 +93,18 @@ class EventProcessor(pyinotify.ProcessEvent):
         assemble_dataset(self.photo_dir, files)
 
         return True
+    
+    def handle_new_file(self, filename:str)-> None:
+        if filename.split('.')[-1] != "jxl":
+            return
+        detect_features(filename)
+        try:
+            self.add_photo(PhotoInfo(ODM_Photo(filename)))
+        except ValueError:
+            print(f"Failed to add photo: {filename} missing metadata")
 
     def process_IN_CLOSE_WRITE(self, event) -> None:
-        if event.pathname.split('.')[-1] != "jxl":
-            return
-        detect_features(event.pathname)
-        try:
-            self.add_photo(PhotoInfo(ODM_Photo(event.pathname)))
-        except ValueError:
-            print(f"Failed to add photo: {event.pathname} missing metadata")
+        self.handle_new_file(event.pathname)
 
 
 def detect_features(filename: str) -> None:
@@ -100,7 +124,7 @@ def detect_features(filename: str) -> None:
 
 def assemble_dataset(photo_dir: str, photos: list[str]) -> None:
     print(f"Assembling dataset from {len(photos)} photos")
-    root_dir = "tmp"
+    root_dir = "/datasets/tmp"
     os.mkdir(root_dir)
     image_dir = os.path.join(root_dir, "images")
     os.mkdir(image_dir)
@@ -123,10 +147,15 @@ def assemble_dataset(photo_dir: str, photos: list[str]) -> None:
 def main() -> None:
     photo_dir = os.path.abspath(sys.argv[1])
     watch_manager = pyinotify.WatchManager()
-    event_notifier = pyinotify.Notifier(watch_manager, EventProcessor(photo_dir=photo_dir))
+    event_processor = EventProcessor(photo_dir=photo_dir)
+    event_notifier = pyinotify.Notifier(watch_manager, event_processor)
 
     print(f"Watching {photo_dir} for images to mosaic")
     watch_manager.add_watch(photo_dir, pyinotify.IN_CLOSE_WRITE)
+    with os.scandir(photo_dir) as entries:
+        for entry in entries:
+            if entry.is_file():
+                event_processor.handle_new_file(entry.path)
     event_notifier.loop()
 
 

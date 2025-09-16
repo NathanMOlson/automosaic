@@ -13,6 +13,7 @@ services:
     build: ./automosaic
     volumes:
       - image_dir:/images
+      - dataset_dir:/datasets
     environment:
       - PYTHONUNBUFFERED=1
 
@@ -25,3 +26,4 @@ services:
 
 volumes:
   image_dir:
+  dataset_dir:

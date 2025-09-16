@@ -10,19 +10,28 @@ class EventProcessor(pyinotify.ProcessEvent):
         with open(filename + ".saved", "w") as f:
             pass
 
-    def process_IN_CLOSE_WRITE(self, event) -> None:
-        if event.pathname.split('.')[-1] == "saved":
+    def handle_new_file(self, filename: str) -> None:
+        if filename.split('.')[-1] != "jxl":
             return
-        self.save_image(event.pathname)
+        self.save_image(filename)
+
+    def process_IN_CLOSE_WRITE(self, event) -> None:
+        self.handle_new_file(event.pathname)
 
 
 def main() -> None:
     watch_manager = pyinotify.WatchManager()
-    event_notifier = pyinotify.Notifier(watch_manager, EventProcessor())
+    event_processor = EventProcessor()
+    event_notifier = pyinotify.Notifier(watch_manager, event_processor)
 
     image_dir = os.path.abspath(sys.argv[1])
     print(f"Watching {image_dir} for images to move to storage")
     watch_manager.add_watch(image_dir, pyinotify.IN_CLOSE_WRITE)
+    
+    with os.scandir(image_dir) as entries:
+        for entry in entries:
+            if entry.is_file():
+                event_processor.handle_new_file(entry.path)
     event_notifier.loop()
 
 
