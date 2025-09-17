@@ -18,9 +18,8 @@ def upload():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    fd, filepath = mkstemp(os.path.splitext(file.filename)[1])
+    fd, filepath = mkstemp(os.path.splitext(file.filename)[1], dir="/images")
     with os.fdopen(fd, 'wb') as f:
         file.save(f)
-    shutil.move(filepath, "/images")
 
     return jsonify({'message': f'File {file.filename} saved to {filepath}'}), 200

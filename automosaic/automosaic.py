@@ -12,6 +12,7 @@ import math
 import sys
 
 from stages.odm_app import ODMApp
+from tempfile import mkdtemp
 
 
 class PhotoInfo:
@@ -90,12 +91,18 @@ class EventProcessor(pyinotify.ProcessEvent):
         files = []
         for i in range(start_index, len(self.photos)):
             files.append(self.photos[i].filename)
+            # Mark the image as mosaiced by creating an empty file with the same name and ".mosaiced" appended
+            with open(os.path.join(self.photo_dir, self.photos[i].filename + ".mosaiced"), "w") as f:
+                pass
         assemble_dataset(self.photo_dir, files)
+        self.photos = []
 
         return True
     
     def handle_new_file(self, filename:str)-> None:
         if filename.split('.')[-1] != "jxl":
+            return
+        if os.path.exists(filename + ".mosaiced"):
             return
         detect_features(filename)
         try:
@@ -124,8 +131,8 @@ def detect_features(filename: str) -> None:
 
 def assemble_dataset(photo_dir: str, photos: list[str]) -> None:
     print(f"Assembling dataset from {len(photos)} photos")
-    root_dir = "/datasets/tmp"
-    os.mkdir(root_dir)
+    
+    root_dir = mkdtemp(dir="/datasets")
     image_dir = os.path.join(root_dir, "images")
     os.mkdir(image_dir)
     opensfm_dir = os.path.join(root_dir, "opensfm")

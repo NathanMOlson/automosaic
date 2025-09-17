@@ -5,13 +5,15 @@ import sys
 
 class EventProcessor(pyinotify.ProcessEvent):
     def save_image(self, filename) -> None:
-        print(f"Saving {os.path.basename(filename)}")
+        print(f"Saving {filename}")
         # Mark the image as saved by creating an empty file with the same name and ".saved" appended
         with open(filename + ".saved", "w") as f:
             pass
 
     def handle_new_file(self, filename: str) -> None:
         if filename.split('.')[-1] != "jxl":
+            return
+        if os.path.exists(filename +".saved"):
             return
         self.save_image(filename)
 
