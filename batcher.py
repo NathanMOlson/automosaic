@@ -3,36 +3,75 @@ import multiprocessing as mp
 import shutil
 from numpy.typing import NDArray
 import numpy as np
-import cv2
-from opendm.photo import ODM_Photo
-from opensfm import features
-from opensfm.config import default_config
-from opendm import config
 import os
 import math
-import sys
+import exifread
+import pytz
 
 from tempfile import mkdtemp
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from datetime import datetime
 
 
 class PhotoInfo:
-    def __init__(self, photo: ODM_Photo) -> None:
-        if photo.filename is None or photo.utc_time is None \
-                or photo.latitude is None or photo.longitude is None:
-            raise ValueError
-        self.filename = photo.filename
-        self.lat = photo.latitude
-        self.lon = photo.longitude
-        self.t_utc = photo.utc_time / 1000.0
-        self.v = None
-        self.groundspeed = None
-        self.dir = None
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        with open(filename, 'rb') as f:
+            tags = exifread.process_file(f, details=False, extract_thumbnail=False)
 
-        if photo.speed_x is not None and photo.speed_y is not None:
-            self.v = np.array([photo.speed_x, photo.speed_y])
-            self.groundspeed = np.linalg.norm(self.v)
-            self.dir = self.v / self.groundspeed
+        self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
+        self.lon = self.dms_to_decimal(tags['GPS GPSLongitude'], tags['GPS GPSLongitudeRef'])
+
+        str_time = tags['EXIF DateTimeOriginal'].values
+        utc_time = datetime.strptime(str_time, "%Y:%m:%d %H:%M:%S")
+        timezone = pytz.timezone('UTC')
+        epoch = timezone.localize(datetime.utcfromtimestamp(0))
+        self.t_utc = (timezone.localize(utc_time) - epoch).total_seconds()
+
+        if tags['GPS GPSSpeedRef'].values[0] == "K":
+            self.groundspeed = self.float_value(tags['GPS GPSSpeed'])*1000/3600
+        else:
+            raise ValueError(f"Unknown GPS Speed Ref: {tags['GPS GPSSpeedRef']}")
+        if tags['GPS GPSTrackRef'].values[0] == "T":
+            track = self.float_value(tags['GPS GPSTrack'])
+        else:
+            raise ValueError(f"Unknown GPS Track Ref: {tags['GPS GPSTrackRef']}")
+        self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
+        self.dir = self.v / np.linalg.norm(self.v)
+
+    def dms_to_decimal(self, dms, sign):
+        """Converts dms coords to decimal degrees"""
+        degrees, minutes, seconds = self.float_values(dms)
+
+        if degrees is not None and minutes is not None and seconds is not None:
+            return (-1 if sign.values[0] in 'SWsw' else 1) * (
+                degrees +
+                minutes / 60 +
+                seconds / 3600
+            )
+
+    def float_values(self, tag):
+        if isinstance(tag.values, list):
+            result = []
+            for v in tag.values:
+                if isinstance(v, int):
+                    result.append(float(v))
+                elif isinstance(v, tuple) and len(v) == 1 and isinstance(v[0], float):
+                    result.append(v[0])
+                elif v.den != 0:
+                    result.append(float(v.num) / float(v.den))
+                else:
+                    result.append(None)
+            return result
+        elif hasattr(tag.values, 'den'):
+            return [float(tag.values.num) / float(tag.values.den) if tag.values.den != 0 else None]
+        else:
+            return [None]
+
+    def float_value(self, tag):
+        v = self.float_values(tag)
+        if len(v) > 0:
+            return v[0]
 
 
 def approx_displacement(p1: PhotoInfo, p2: PhotoInfo) -> NDArray:
@@ -52,33 +91,18 @@ class Batcher:
         self.photos: list[PhotoInfo] = []
         self.input_queue: mp.Queue[str] = mp.Queue(1024)
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
-        self.executor = ProcessPoolExecutor()
+        self.executor = ThreadPoolExecutor()
         self.input_future = self.executor.submit(self.input_task)
         self.photo_future = self.executor.submit(self.photo_task)
 
     def check_for_orbit(self) -> bool:
         photo = self.photos[-1]
 
-        if photo.v is None:
-            print(f"{photo.filename} has no velocity metadata, attempting to approximate it")
-            for other in reversed(self.photos):
-                if photo.t_utc - other.t_utc > 2 and photo.t_utc - other.t_utc < 20:
-                    photo.v = approx_displacement(other, photo)/(photo.t_utc - other.t_utc)
-                    photo.groundspeed = np.linalg.norm(photo.v)
-                    photo.dir = photo.v / photo.groundspeed
-                    break
-
-        if photo.v is None:
-            print(f"{photo.filename} has no velocity metadata, ignoring")
-            return False
-
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         start_index = None
 
         for i in range(len(self.photos) - 2, -1, -1):
             other = self.photos[i]
-            if other.v is None:
-                continue
             if photo.t_utc - other.t_utc < min_orbit_time:
                 continue
             if np.dot(photo.dir, other.dir) < 0.7:
@@ -108,57 +132,50 @@ class Batcher:
         self.input_queue.put(filename)
 
     def input_task(self) -> None:
-        filename = self.input_queue.get()
-        try:
-            photo = PhotoInfo(ODM_Photo(filename))
-            photo.filename = filename
-        except ValueError:
-            print(f"Failed to add photo: {filename} missing metadata")
-        save_image(photo)
-        detect_features(filename)
-        self.photo_queue.put(photo)
-        
+        while True:
+            filename = self.input_queue.get()
+            try:
+                photo = PhotoInfo(filename)
+            except ValueError as e:
+                print(f"Failed to add photo: {filename} missing metadata: {e}")
+                continue
+            save_image(photo)
+            detect_features(filename)
+            self.photo_queue.put(photo)
 
     def photo_task(self) -> None:
-        photo = self.photo_queue.get()
-        self.photos.append(photo)
-        self.photos.sort(key=lambda x: x.t_utc)
-        if self.check_for_orbit():
-            self.photos = []
+        while True:
+            photo = self.photo_queue.get()
+            self.photos.append(photo)
+            self.photos.sort(key=lambda x: x.t_utc)
+            if self.check_for_orbit():
+                self.photos = []
 
 
 def detect_features(filename: str) -> None:
-    img = cv2.imread(filename, flags=cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH)
-    config = default_config()
-    config["feature_type"] = "DSPSIFT"
-
-    p, f, c = features.extract_features(img, config, is_panorama=False)
-    size = p[:, 2]
-    order = np.argsort(size)
-    p_sorted = p[order, :]
-    f_sorted = f[order, :]
-    c_sorted = c[order, :]
-    features_data = features.FeaturesData(points=p_sorted, descriptors=f_sorted, colors=c_sorted, semantic=None)
-    features_data.save(filename + ".npz", config)
+    print("detecting features")
 
 
 def assemble_dataset(photos: list[str]) -> None:
-    print(f"Assembling dataset from {len(photos)} photos")
+    try:
+        print(f"Assembling dataset from {len(photos)} photos")
 
-    root_dir = mkdtemp(dir="/datasets")
-    image_dir = os.path.join(root_dir, "images")
-    os.mkdir(image_dir)
-    opensfm_dir = os.path.join(root_dir, "opensfm")
-    os.mkdir(opensfm_dir)
-    features_dir = os.path.join(opensfm_dir, "features")
-    os.mkdir(features_dir)
+        root_dir = mkdtemp()
+        image_dir = os.path.join(root_dir, "images")
+        os.mkdir(image_dir)
+        opensfm_dir = os.path.join(root_dir, "opensfm")
+        os.mkdir(opensfm_dir)
+        features_dir = os.path.join(opensfm_dir, "features")
+        os.mkdir(features_dir)
 
-    for filepath in photos:
-        features_filepath = filepath + ".npz"
-        shutil.move(filepath, os.path.join(image_dir, os.path.basename(filepath)))
-        shutil.move(features_filepath, os.path.join(features_dir, os.path.basename(features_filepath)))
+        for filepath in photos:
+            # features_filepath = filepath + ".npz"
+            shutil.move(filepath, os.path.join(image_dir, os.path.basename(filepath)))
+            # shutil.move(features_filepath, os.path.join(features_dir, os.path.basename(features_filepath)))
 
-    stats_dir = os.path.join(opensfm_dir, "stats")
-    os.mkdir(stats_dir)
-    with open(os.path.join(stats_dir, "stats.json"), "w") as f:
-        f.write("{}\n")
+        stats_dir = os.path.join(opensfm_dir, "stats")
+        os.mkdir(stats_dir)
+        with open(os.path.join(stats_dir, "stats.json"), "w") as f:
+            f.write("{}\n")
+    except Exception as e:
+        print(e)

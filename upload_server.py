@@ -23,6 +23,6 @@ def upload():
     fd, filepath = mkstemp(os.path.splitext(file.filename)[1])
     with os.fdopen(fd, 'wb') as f:
         file.save(f)
-    batcher.on_new_image(filepath)
+    batcher.on_new_file(filepath)
 
     return jsonify({'message': f'File {file.filename} saved to {filepath}'}), 200
