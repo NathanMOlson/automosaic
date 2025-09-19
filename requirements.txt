@@ -2,4 +2,4 @@ flask==3.1.2
 pyopenssl==25.3.0
 exifread==3.5.1
 numpy==2.3.3
-pytz==2025.2
+google-cloud-storage==3.4.0

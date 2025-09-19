@@ -1,17 +1,18 @@
 
 import io
 import multiprocessing as mp
+import random
 from numpy.typing import NDArray
 import numpy as np
 import os
 import math
 import exifread
-import pytz
 import tarfile
+import cloud_storage
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from tempfile import mkstemp
 
 
@@ -26,9 +27,7 @@ class PhotoInfo:
 
         str_time = tags['EXIF DateTimeOriginal'].values
         utc_time = datetime.strptime(str_time, "%Y:%m:%d %H:%M:%S")
-        timezone = pytz.timezone('UTC')
-        epoch = timezone.localize(datetime.utcfromtimestamp(0))
-        self.t_utc = (timezone.localize(utc_time) - epoch).total_seconds()
+        self.t_utc = (utc_time - datetime.fromtimestamp(0)).total_seconds()
 
         if tags['GPS GPSSpeedRef'].values[0] == "K":
             self.groundspeed = self.float_value(tags['GPS GPSSpeed'])*1000/3600
@@ -84,8 +83,30 @@ def approx_displacement(p1: PhotoInfo, p2: PhotoInfo) -> NDArray:
     return d
 
 
+def get_bucket(image: PhotoInfo) -> str:
+    return "images"
+
+
+def get_storage_name(image: PhotoInfo, i: int) -> str:
+    time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
+    return f"{time_str}_{i:04X}.jxl"
+
+
+
+def get_dataset_name(photos: list[PhotoInfo]) -> str:
+    time_str = datetime.fromtimestamp(photos[-1].t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
+    return f"{time_str}.tar"
+
+
 def save_image(image: PhotoInfo):
-    print(f"Saving {image.filename}")
+    bucket = get_bucket(image)
+    for i in range(65536):
+        dest = get_storage_name(image, i)
+        try:
+            cloud_storage.upload(bucket, image.filename, dest)
+            return
+        except FileExistsError as e:
+            print(f"failed to upload {image.filename} to {dest}: {e}")
 
 
 class Batcher:
@@ -118,13 +139,13 @@ class Batcher:
         if start_index is None:
             return False
 
-        files = []
+        photos = []
         for i in range(start_index, len(self.photos)):
-            files.append(self.photos[i].filename)
+            photos.append(self.photos[i])
             # Mark the image as mosaiced by creating an empty file with the same name and ".mosaiced" appended
             with open(self.photos[i].filename + ".mosaiced", "w") as f:
                 pass
-        assemble_dataset(files)
+        assemble_dataset(photos)
 
         return True
 
@@ -135,15 +156,20 @@ class Batcher:
 
     def input_task(self) -> None:
         while True:
-            filename = self.input_queue.get()
+
             try:
-                photo = PhotoInfo(filename)
-            except ValueError as e:
-                print(f"Failed to add photo: {filename} missing metadata: {e}")
-                continue
-            save_image(photo)
-            detect_features(filename)
-            self.photo_queue.put(photo)
+                filename = self.input_queue.get()
+                try:
+                    photo = PhotoInfo(filename)
+                except ValueError as e:
+                    print(f"Failed to add photo: {filename} missing metadata: {e}")
+                    continue
+                save_image(photo)
+                detect_features(filename)
+                self.photo_queue.put(photo)
+
+            except Exception as e:
+                print(f"Failed to add photo: {filename}: {e}")
 
     def photo_task(self) -> None:
         while True:
@@ -158,7 +184,7 @@ def detect_features(filename: str) -> None:
     print("detecting features")
 
 
-def assemble_dataset(photos: list[str]) -> None:
+def assemble_dataset(photos: list[PhotoInfo]) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
 
@@ -171,9 +197,9 @@ def assemble_dataset(photos: list[str]) -> None:
         with os.fdopen(fd, 'wb') as f:
             with tarfile.open(fileobj=f, mode='w') as tar:
 
-                for filepath in photos:
-                    tar.add(filepath, arcname=os.path.join(image_dir, os.path.basename(filepath)))
-                    features_filepath = filepath + ".npz"
+                for photo in photos:
+                    tar.add(photo.filename, arcname=os.path.join(image_dir, os.path.basename(photo.filename)))
+                    features_filepath = photo.filename + ".npz"
                     if os.path.exists(features_filepath):
                         tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
 
@@ -182,5 +208,6 @@ def assemble_dataset(photos: list[str]) -> None:
                 stats_file_info.size = 0
                 tar.addfile(stats_file_info, fileobj=io.BytesIO())
         print(f"Saved dataset to {output_tar}")
+        cloud_storage.upload(get_bucket(photos[0]), output_tar, get_dataset_name(photos))
     except Exception as e:
         print(e)
