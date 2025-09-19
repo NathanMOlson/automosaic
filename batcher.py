@@ -1,12 +1,13 @@
 
+import io
 import multiprocessing as mp
-import shutil
 from numpy.typing import NDArray
 import numpy as np
 import os
 import math
 import exifread
 import pytz
+import tarfile
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -160,22 +161,22 @@ def assemble_dataset(photos: list[str]) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
 
-        root_dir = mkdtemp()
-        image_dir = os.path.join(root_dir, "images")
-        os.mkdir(image_dir)
-        opensfm_dir = os.path.join(root_dir, "opensfm")
-        os.mkdir(opensfm_dir)
+        image_dir = "images"
+        opensfm_dir = "opensfm"
         features_dir = os.path.join(opensfm_dir, "features")
-        os.mkdir(features_dir)
+        output_tar = "dataset.tar"
 
-        for filepath in photos:
-            # features_filepath = filepath + ".npz"
-            shutil.move(filepath, os.path.join(image_dir, os.path.basename(filepath)))
-            # shutil.move(features_filepath, os.path.join(features_dir, os.path.basename(features_filepath)))
+        with tarfile.open(output_tar, mode='w') as tar:
 
-        stats_dir = os.path.join(opensfm_dir, "stats")
-        os.mkdir(stats_dir)
-        with open(os.path.join(stats_dir, "stats.json"), "w") as f:
-            f.write("{}\n")
+            for filepath in photos:
+                tar.add(filepath, arcname=os.path.join(image_dir, os.path.basename(filepath)))
+                features_filepath = filepath + ".npz"
+                if os.path.exists(features_filepath):
+                    tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
+
+            stats_dir = os.path.join(opensfm_dir, "stats")
+            stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
+            stats_file_info.size = 0
+            tar.addfile(stats_file_info, fileobj=io.BytesIO())
     except Exception as e:
         print(e)
