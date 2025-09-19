@@ -12,6 +12,7 @@ import tarfile
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
+from tempfile import mkstemp
 
 
 class PhotoInfo:
@@ -165,18 +166,21 @@ def assemble_dataset(photos: list[str]) -> None:
         opensfm_dir = "opensfm"
         features_dir = os.path.join(opensfm_dir, "features")
         output_tar = "dataset.tar"
+        fd, output_tar = mkstemp(".tar")
 
-        with tarfile.open(output_tar, mode='w') as tar:
+        with os.fdopen(fd, 'wb') as f:
+            with tarfile.open(fileobj=f, mode='w') as tar:
 
-            for filepath in photos:
-                tar.add(filepath, arcname=os.path.join(image_dir, os.path.basename(filepath)))
-                features_filepath = filepath + ".npz"
-                if os.path.exists(features_filepath):
-                    tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
+                for filepath in photos:
+                    tar.add(filepath, arcname=os.path.join(image_dir, os.path.basename(filepath)))
+                    features_filepath = filepath + ".npz"
+                    if os.path.exists(features_filepath):
+                        tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
 
-            stats_dir = os.path.join(opensfm_dir, "stats")
-            stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
-            stats_file_info.size = 0
-            tar.addfile(stats_file_info, fileobj=io.BytesIO())
+                stats_dir = os.path.join(opensfm_dir, "stats")
+                stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
+                stats_file_info.size = 0
+                tar.addfile(stats_file_info, fileobj=io.BytesIO())
+        print(f"Saved dataset to {output_tar}")
     except Exception as e:
         print(e)
