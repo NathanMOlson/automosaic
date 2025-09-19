@@ -1,12 +1,14 @@
 from flask import Flask, request, jsonify
 from tempfile import mkstemp
 import os
-import shutil
+from batcher import Batcher
+
 app = Flask(__name__)
+batcher = Batcher()
 
 @app.route("/")
 def hello():
-    return "Lab 308 Image Server"
+    return "Lab 308 Upload Server"
 
 @app.route('/image', methods = ['POST'])
 def upload():
@@ -18,8 +20,9 @@ def upload():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    fd, filepath = mkstemp(os.path.splitext(file.filename)[1], dir="/images")
+    fd, filepath = mkstemp(os.path.splitext(file.filename)[1])
     with os.fdopen(fd, 'wb') as f:
         file.save(f)
+    batcher.on_new_image(filepath)
 
     return jsonify({'message': f'File {file.filename} saved to {filepath}'}), 200
