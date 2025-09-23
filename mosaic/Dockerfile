@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
 WORKDIR /code
-COPY . ./
+COPY common ./
+COPY mosaic ./
 
 RUN pip install -r requirements.txt
 

@@ -1,1 +1,0 @@
-common/cloud_storage.py
