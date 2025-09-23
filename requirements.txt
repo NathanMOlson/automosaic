@@ -3,3 +3,4 @@ pyopenssl==25.3.0
 exifread==3.5.1
 numpy==2.3.3
 google-cloud-storage==3.4.0
+google-cloud-run==0.11.0

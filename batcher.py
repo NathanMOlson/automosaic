@@ -9,6 +9,7 @@ import math
 import exifread
 import tarfile
 import cloud_storage
+import cloud_run_jobs
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -207,6 +208,10 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
                 stats_file_info.size = 0
                 tar.addfile(stats_file_info, fileobj=io.BytesIO())
         print(f"Saved dataset to {output_tar}")
-        cloud_storage.upload(get_bucket_name(photos[0]), output_tar, get_dataset_name(photos))
+        bucket_name = get_bucket_name(photos[0])
+        dataset_name = get_dataset_name(photos)
+        cloud_storage.upload(bucket_name, output_tar, dataset_name)
+        vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
+        cloud_run_jobs.run_job(job_name=os.environ['MOSAIC_JOB_NAME'], vars=vars)
     except Exception as e:
         print(e)
