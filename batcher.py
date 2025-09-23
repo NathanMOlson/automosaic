@@ -83,26 +83,22 @@ def approx_displacement(p1: PhotoInfo, p2: PhotoInfo) -> NDArray:
     return d
 
 
-def get_image_bucket(image: PhotoInfo) -> str:
-    return "images"
-
-
-def get_dataset_bucket(image: PhotoInfo) -> str:
-    return "datasets"
+def get_bucket_name(image: PhotoInfo) -> str:
+    return os.environ['STORAGE_BUCKET']
 
 
 def get_storage_name(image: PhotoInfo, i: int) -> str:
     time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
-    return f"{time_str}_{i:04X}.jxl"
+    return f"images/{time_str}_{i:04X}.jxl"
 
 
 def get_dataset_name(photos: list[PhotoInfo]) -> str:
     time_str = datetime.fromtimestamp(photos[-1].t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
-    return f"{time_str}.tar"
+    return f"datasets/{time_str}.tar"
 
 
 def save_image(image: PhotoInfo):
-    bucket = get_image_bucket(image)
+    bucket = get_bucket_name(image)
     for i in range(65536):
         dest = get_storage_name(image, i)
         try:
@@ -211,6 +207,6 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
                 stats_file_info.size = 0
                 tar.addfile(stats_file_info, fileobj=io.BytesIO())
         print(f"Saved dataset to {output_tar}")
-        cloud_storage.upload(get_dataset_bucket(photos[0]), output_tar, get_dataset_name(photos))
+        cloud_storage.upload(get_bucket_name(photos[0]), output_tar, get_dataset_name(photos))
     except Exception as e:
         print(e)
