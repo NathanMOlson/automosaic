@@ -89,13 +89,27 @@ def get_bucket_name(image: PhotoInfo) -> str:
 
 
 def get_storage_name(image: PhotoInfo, i: int) -> str:
-    time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
-    return f"images/{time_str}_{i:04X}.jxl"
+    date_path = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d")
+    time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    name = f"images/{date_path}/{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+    if i > 0:
+        name += f"_{i}"
+    name += "." + image.filename.split('.')[-1]
+    return name
 
 
 def get_dataset_name(photos: list[PhotoInfo]) -> str:
-    time_str = datetime.fromtimestamp(photos[-1].t_utc, tz=timezone.utc).strftime("%Y/%m/%d/%H:%M:%S")
-    return f"datasets/{time_str}.tar"
+    t = 0
+    lat = 0
+    lon = 0
+    n = len(photos)
+    for photo in photos:
+        t += photo.t_utc / n
+        lat += photo.lat / n
+        lon += photo.lon / n
+    date_path = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y/%m/%d")
+    time_str = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    return f"datasets/{date_path}/{time_str}_{lat:.5f}_{lon:.5f}.tar"
 
 
 def save_image(image: PhotoInfo):
