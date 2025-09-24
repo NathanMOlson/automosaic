@@ -7,7 +7,7 @@ from keepalive import KeepAlive
 
 app = Flask(__name__)
 batcher = Batcher()
-watchdog = KeepAlive("https://batcher-436396529778.us-west1.run.app", 30)
+watchdog = KeepAlive("https://batcher-436396529778.us-west1.run.app", float(os.environ["KEEPALIVE_SECONDS"]))
 
 @app.route("/")
 def hello():
