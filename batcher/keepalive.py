@@ -19,16 +19,24 @@ class KeepAlive:
         self.start_time = time.time()
 
     def task(self) -> None:
+        futures = []
+        auth_req = google.auth.transport.requests.Request()
+        id_token = google.oauth2.id_token.fetch_id_token(auth_req, self.service_url)
         while True:
-            time.sleep(1)
-            if time.time() - self.start_time < self.keepalive_time:
-                req = urllib.request.Request(self.endpoint)
-
-                auth_req = google.auth.transport.requests.Request()
-                id_token = google.oauth2.id_token.fetch_id_token(auth_req, self.service_url)
-
-                req.add_header("Authorization", f"Bearer {id_token}")
-                self.executor.submit(urllib.request.urlopen, req)
+            try:
+                time.sleep(1)
+                if len(futures) > 0 and futures[0].done():
+                    res = futures[0].result()
+                    if res.status != 200:
+                        print(f"Keepalive request failed: {res.status}, re-requesting ID token")
+                        id_token = google.oauth2.id_token.fetch_id_token(auth_req, self.service_url)
+                    del futures[0]
+                if time.time() - self.start_time < self.keepalive_time:
+                    req = urllib.request.Request(self.endpoint)
+                    req.add_header("Authorization", f"Bearer {id_token}")
+                    futures.append(self.executor.submit(urllib.request.urlopen, req))
+            except Exception as e:
+                print(f"Exception in keepalive thread: {e}")
 
 
 def make_authorized_get_request(endpoint, audience):
