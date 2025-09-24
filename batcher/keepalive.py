@@ -28,7 +28,7 @@ class KeepAlive:
                 id_token = google.oauth2.id_token.fetch_id_token(auth_req, self.service_url)
 
                 req.add_header("Authorization", f"Bearer {id_token}")
-                urllib.request.urlopen(req)
+                self.executor.submit(urllib.request.urlopen, req)
 
 
 def make_authorized_get_request(endpoint, audience):

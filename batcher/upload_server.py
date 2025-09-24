@@ -16,7 +16,7 @@ def hello():
 @app.route("/keepalive")
 def keepalive():
     print("keepalive")
-    time.sleep(1)
+    time.sleep(2)
     return ""
 
 @app.route('/image', methods = ['POST'])
