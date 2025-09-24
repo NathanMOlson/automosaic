@@ -1,10 +1,11 @@
 FROM python:3.12-slim
 
 WORKDIR /code
+COPY batcher/requirements.txt ./
+RUN pip install -r requirements.txt
+
 COPY common ./
 COPY batcher ./
-
-RUN pip install -r requirements.txt
 
 ENV FLASK_APP=upload_server PYTHONUNBUFFERED=1 STORAGE_BUCKET=lab308-dev
 EXPOSE 8000
