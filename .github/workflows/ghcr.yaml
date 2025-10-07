@@ -36,6 +36,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./mosaic/Dockerfile
           push: true
           tags: ghcr.io/${{ steps.tolower.outputs.lowercase }}:latest,ghcr.io/${{ steps.tolower.outputs.lowercase }}:${{ github.sha }}
