@@ -11,7 +11,7 @@ jobs:
 
     permissions:
       contents: read
-      packages: admin
+      packages: write
 
     steps:
       - name: Checkout repository
