@@ -5,7 +5,7 @@ import tarfile
 import cloud_storage
 
 from opendm import config
-from stages.lightning_ortho import LightningOrtho
+from lightning_ortho import LightningOrtho
 
 def main():
     bucket_name = os.getenv("BUCKET")
