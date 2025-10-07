@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM ghcr.io/nathanmolson/odm:5d12c734bd9c1a3ea4435164206475f012489bd2
 
 WORKDIR /code
 COPY mosaic/requirements.txt ./
@@ -7,4 +7,4 @@ RUN pip install -r requirements.txt
 COPY common ./
 COPY mosaic ./
 
-CMD ["python3", "mosaic.py"]
+ENTRYPOINT ["python3", "mosaic.py"]
