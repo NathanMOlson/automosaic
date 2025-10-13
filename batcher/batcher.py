@@ -23,23 +23,40 @@ class PhotoInfo:
         with open(filename, 'rb') as f:
             tags = exifread.process_file(f, details=False, extract_thumbnail=False)
 
-        self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
-        self.lon = self.dms_to_decimal(tags['GPS GPSLongitude'], tags['GPS GPSLongitudeRef'])
+        self.lat = None
+        self.lon = None
+        self.t_utc = None
+        self.v = None
+        self.dir = None
+        self.groundspeed = None
 
-        str_time = tags['EXIF DateTimeOriginal'].values
-        utc_time = datetime.strptime(str_time, "%Y:%m:%d %H:%M:%S")
-        self.t_utc = (utc_time - datetime.fromtimestamp(0)).total_seconds()
+        try:
+            self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
+            self.lon = self.dms_to_decimal(tags['GPS GPSLongitude'], tags['GPS GPSLongitudeRef'])
+        except KeyError:
+            pass
 
-        if tags['GPS GPSSpeedRef'].values[0] == "K":
-            self.groundspeed = self.float_value(tags['GPS GPSSpeed'])*1000/3600
-        else:
-            raise ValueError(f"Unknown GPS Speed Ref: {tags['GPS GPSSpeedRef']}")
-        if tags['GPS GPSTrackRef'].values[0] == "T":
-            track = self.float_value(tags['GPS GPSTrack'])
-        else:
-            raise ValueError(f"Unknown GPS Track Ref: {tags['GPS GPSTrackRef']}")
-        self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
-        self.dir = self.v / np.linalg.norm(self.v)
+        try:
+            str_time = tags['EXIF DateTimeOriginal'].values
+            utc_time = datetime.strptime(str_time, "%Y:%m:%d %H:%M:%S")
+            self.t_utc = (utc_time - datetime.fromtimestamp(0)).total_seconds()
+        except KeyError:
+            pass
+
+        try:
+            if tags['GPS GPSSpeedRef'].values[0] == "K":
+                self.groundspeed = self.float_value(tags['GPS GPSSpeed'])*1000/3600
+            else:
+                raise ValueError(f"Unknown GPS Speed Ref: {tags['GPS GPSSpeedRef']}")
+
+            if tags['GPS GPSTrackRef'].values[0] == "T":
+                track = self.float_value(tags['GPS GPSTrack'])
+            else:
+                raise ValueError(f"Unknown GPS Track Ref: {tags['GPS GPSTrackRef']}")
+            self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
+            self.dir = self.v / np.linalg.norm(self.v)
+        except KeyError:
+            pass
 
     def dms_to_decimal(self, dms, sign):
         """Converts dms coords to decimal degrees"""
@@ -91,7 +108,10 @@ def get_bucket_name(image: PhotoInfo) -> str:
 def get_storage_name(image: PhotoInfo, i: int) -> str:
     date_path = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    name = f"images/{date_path}/{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+    if image.lat is not None and image.lon is not None:
+        name = f"images/{date_path}/{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+    else:
+        name = f"images/{date_path}/{time_str}"
     if i > 0:
         name += f"_{i}"
     name += "." + image.filename.split('.')[-1]
@@ -178,7 +198,13 @@ class Batcher:
                 except ValueError as e:
                     print(f"Failed to add photo: {filename} missing metadata: {e}")
                     continue
+                if photo.t_utc is None:
+                    print(f"Photo {filename} had no timestamp, discarding")
+                    continue
                 save_image(photo)
+                if photo.lat is None or photo.lon is None:
+                    print(f"Photo {filename} had no position metadata, will not use for mosaic")
+                    continue
                 detect_features(filename)
                 self.photo_queue.put(photo)
 
