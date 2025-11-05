@@ -3,7 +3,7 @@ name: Build and Upload Docker Image
 on:
   push:
     branches:
-      - single_container
+      - main
 
 jobs:
   build-and-upload:
