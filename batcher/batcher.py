@@ -218,6 +218,8 @@ class Batcher:
             self.photos.append(photo)
             self.photos.sort(key=lambda x: x.t_utc)
             if self.check_for_orbit():
+                for photo in self.photos:
+                    os.remove(photo.filename)
                 self.photos = []
 
 
