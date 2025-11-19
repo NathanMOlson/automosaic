@@ -157,20 +157,27 @@ class Batcher:
 
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         min_orbit_radius = photo.groundspeed*photo.groundspeed/9.81  # assume 45 deg max bank
+        max_dataset_time = 900
         start_index = None
 
-        for i in range(len(self.photos) - 2, -1, -1):
-            other = self.photos[i]
-            if photo.t_utc - other.t_utc < min_orbit_time:
-                continue
-            if np.dot(photo.dir, other.dir) < 0.7:
-                continue
-            d = approx_displacement(other, photo)
-            if np.dot(photo.dir, d) <= 0:
-                continue
-            if np.linalg.norm(d) < min_orbit_radius:
-                start_index = i
-                break
+        if photo.t_utc - self.photos[0].t_utc > max_dataset_time:
+            start_index = 0
+        else:
+            for i in range(len(self.photos) - 2, -1, -1):
+                other = self.photos[i]
+                if photo.t_utc - other.t_utc > max_dataset_time:
+                    start_index = 0
+                    break
+                if photo.t_utc - other.t_utc < min_orbit_time:
+                    continue
+                if np.dot(photo.dir, other.dir) < 0.7:
+                    continue
+                d = approx_displacement(other, photo)
+                if np.dot(photo.dir, d) <= 0:
+                    continue
+                if np.linalg.norm(d) < min_orbit_radius:
+                    start_index = i
+                    break
         if start_index is None:
             return False
 
