@@ -7,6 +7,7 @@ import cloud_storage
 from opendm import config
 from lightning_ortho import LightningOrtho
 
+
 def main():
     bucket_name = os.getenv("BUCKET")
     if bucket_name:
