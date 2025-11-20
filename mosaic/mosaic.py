@@ -25,8 +25,7 @@ def main():
     args = config.config()
     args.project_path = dataset_dir
     args.fast_orthophoto = True
-    args.feature_threshold_scale = 1/256
-    args.camera_lens = "brown"
+    args.feature_threshold_scale = 1
     args.ignore_ypr = True
 
     app = LightningOrtho(args)
