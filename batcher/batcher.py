@@ -184,9 +184,6 @@ class Batcher:
         photos = []
         for i in range(start_index, len(self.photos)):
             photos.append(self.photos[i])
-            # Mark the image as mosaiced by creating an empty file with the same name and ".mosaiced" appended
-            with open(self.photos[i].filename + ".mosaiced", "w") as f:
-                pass
         assemble_dataset(photos)
 
         return True
