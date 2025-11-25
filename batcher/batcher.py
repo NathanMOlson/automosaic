@@ -10,11 +10,15 @@ import exifread
 import tarfile
 import cloud_storage
 import cloud_run_jobs
+import glob
+import time
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
 from tempfile import mkstemp
+
+KML_NAME = "out.kml"
 
 
 class PhotoInfo:
@@ -197,7 +201,9 @@ class Batcher:
         while True:
 
             try:
+                # print("getting input")
                 filename = self.input_queue.get()
+                # print(f"got input: {filename}")
                 try:
                     photo = PhotoInfo(filename)
                 except ValueError as e:
@@ -206,11 +212,11 @@ class Batcher:
                 if photo.t_utc is None:
                     print(f"Photo {filename} had no timestamp, discarding")
                     continue
-                save_image(photo)
+                # save_image(photo)
                 if photo.lat is None or photo.lon is None:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
-                detect_features(filename)
+                # detect_features(filename)
                 self.photo_queue.put(photo)
 
             except Exception as e:
@@ -218,12 +224,14 @@ class Batcher:
 
     def photo_task(self) -> None:
         while True:
+            # print("getting photo")
             photo = self.photo_queue.get()
+            # print("got photo")
             self.photos.append(photo)
             self.photos.sort(key=lambda x: x.t_utc)
             if self.check_for_orbit():
-                for photo in self.photos:
-                    os.remove(photo.filename)
+                # for photo in self.photos:
+                #     os.remove(photo.filename)
                 self.photos = []
 
 
@@ -231,34 +239,87 @@ def detect_features(filename: str) -> None:
     print("detecting features")
 
 
+dataset_num = 0
+
 def assemble_dataset(photos: list[PhotoInfo]) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
+        global dataset_num
+        dataset_num += 1
 
-        image_dir = "images"
-        opensfm_dir = "opensfm"
-        features_dir = os.path.join(opensfm_dir, "features")
-        output_tar = "dataset.tar"
-        fd, output_tar = mkstemp(".tar")
+        print(f"saving {KML_NAME}: {dataset_num}")
 
-        with os.fdopen(fd, 'wb') as f:
-            with tarfile.open(fileobj=f, mode='w') as tar:
+        with open(KML_NAME, mode='a') as f:
+            f.write('  <Placemark>\n')
+            f.write(f'    <name>{dataset_num}</name>\n')
+            f.write('    <LineString>\n')
+            # f.write('      <altitudeMode>absolute</altitudeMode>\n')
+            f.write('      <coordinates>\n')
+            for photo in photos:
+                f.write(f'        {photo.lon},{photo.lat}\n')
+            f.write('      </coordinates>\n')
+            f.write('    </LineString>\n')
+            f.write('  </Placemark>\n')
 
-                for photo in photos:
-                    tar.add(photo.filename, arcname=os.path.join(image_dir, os.path.basename(photo.filename)))
-                    features_filepath = photo.filename + ".npz"
-                    if os.path.exists(features_filepath):
-                        tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
+        print(f"saved {KML_NAME}: {dataset_num}")
 
-                stats_dir = os.path.join(opensfm_dir, "stats")
-                stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
-                stats_file_info.size = 0
-                tar.addfile(stats_file_info, fileobj=io.BytesIO())
-        print(f"Saved dataset to {output_tar}")
-        bucket_name = get_bucket_name(photos[0])
-        dataset_name = get_dataset_name(photos)
-        cloud_storage.upload(bucket_name, output_tar, dataset_name)
-        vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
-        cloud_run_jobs.run_job(job_name=os.environ['MOSAIC_JOB_NAME'], vars=vars)
+        # image_dir = "images"
+        # opensfm_dir = "opensfm"
+        # features_dir = os.path.join(opensfm_dir, "features")
+        # output_tar = "dataset.tar"
+        # fd, output_tar = mkstemp(".tar")
+
+        # with 
+
+        # with os.fdopen(fd, 'wb') as f:
+        #     with tarfile.open(fileobj=f, mode='w') as tar:
+
+        #         for photo in photos:
+        #             tar.add(photo.filename, arcname=os.path.join(image_dir, os.path.basename(photo.filename)))
+        #             features_filepath = photo.filename + ".npz"
+        #             if os.path.exists(features_filepath):
+        #                 tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
+
+        #         stats_dir = os.path.join(opensfm_dir, "stats")
+        #         stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
+        #         stats_file_info.size = 0
+        #         tar.addfile(stats_file_info, fileobj=io.BytesIO())
+        # print(f"Saved dataset to {output_tar}")
+        # bucket_name = get_bucket_name(photos[0])
+        # dataset_name = get_dataset_name(photos)
+        # cloud_storage.upload(bucket_name, output_tar, dataset_name)
+        # vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
+        # cloud_run_jobs.run_job(job_name=os.environ['MOSAIC_JOB_NAME'], vars=vars)
     except Exception as e:
         print(e)
+
+
+def main():
+
+    with open(KML_NAME, 'w') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write('<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">\n')
+        f.write('<Document>\n')
+        f.write(f'  <name>{KML_NAME[0:-4]}</name>\n')
+
+    batcher = Batcher()
+
+    for f in glob.glob("images/*.jxl"):
+        # print(f"sending {f}")
+        batcher.on_new_file(f)
+        # print(f"sent {f}")
+
+    time.sleep(10)
+    print("finishing KML")
+    with open(KML_NAME, "a") as f:
+        f.write('</Document>\n')
+        f.write('</kml>\n')
+    print("finished KML")
+
+    exit()
+    
+
+
+
+if __name__ == "__main__":
+    main()
