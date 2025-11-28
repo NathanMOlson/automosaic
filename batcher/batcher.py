@@ -33,6 +33,7 @@ class PhotoInfo:
         self.v = None
         self.dir = None
         self.groundspeed = None
+        self.serial_number = None
 
         try:
             self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
@@ -44,6 +45,11 @@ class PhotoInfo:
             str_time = tags['EXIF DateTimeOriginal'].values
             utc_time = datetime.strptime(str_time, "%Y:%m:%d %H:%M:%S")
             self.t_utc = (utc_time - datetime.fromtimestamp(0)).total_seconds()
+        except KeyError:
+            pass
+
+        try:
+            self.serial_number = tags['EXIF BodySerialNumber'].values
         except KeyError:
             pass
 
@@ -172,6 +178,8 @@ class Batcher:
                 if photo.t_utc - other.t_utc > max_dataset_time:
                     start_index = 0
                     break
+                if photo.serial_number != other.serial_number:
+                    continue
                 if photo.t_utc - other.t_utc < min_orbit_time:
                     continue
                 if np.dot(photo.dir, other.dir) < 0.7:
