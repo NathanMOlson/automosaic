@@ -1,3 +1,4 @@
+import glob
 import io
 import os
 import shutil
@@ -8,7 +9,7 @@ from opendm import config
 from lightning_ortho import LightningOrtho
 
 
-def main():
+def main_orig():
     bucket_name = os.getenv("BUCKET")
     if bucket_name:
         dataset_name = os.environ["DATASET"]
@@ -19,15 +20,24 @@ def main():
             dataset_archive = f.read()
 
     dataset_dir = "/dataset"
-    os.mkdir(dataset_dir)
-    with tarfile.open(fileobj=io.BytesIO(dataset_archive), mode="r") as tar:
-        tar.extractall(path=dataset_dir)
+    try:
+        os.mkdir(dataset_dir)
+        with tarfile.open(fileobj=io.BytesIO(dataset_archive), mode="r") as tar:
+            tar.extractall(path=dataset_dir)
+    except:
+        pass
+    # try:
+    #     shutil.rmtree(os.path.join(dataset_dir, "opensfm"))
+    # except:
+    #     pass
 
     args = config.config()
     args.project_path = dataset_dir
     args.fast_orthophoto = True
     args.feature_threshold_scale = 1
     args.ignore_ypr = True
+    args.use_fixed_camera_params = False
+    # args.sfm_algorithm = 'triangulation'
 
     app = LightningOrtho(args)
     outputs = {}
@@ -44,6 +54,22 @@ def main():
         print("SUCCESS!")
     else:
         exit(retcode)
+
+def main():
+    for dataset_dir in glob.glob("/datasets/tri/dataset3"):
+        print(dataset_dir)
+        args = config.config()
+        args.project_path = dataset_dir
+        args.fast_orthophoto = True
+        args.feature_threshold_scale = 1
+        args.ignore_ypr = False
+        args.use_fixed_camera_params = False
+        args.sfm_algorithm = 'triangulation'
+        args.camera_lens = 'perspective'
+
+        app = LightningOrtho(args)
+        outputs = {}
+        retcode = app.execute(outputs)
 
 
 if __name__ == "__main__":

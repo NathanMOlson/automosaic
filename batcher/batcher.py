@@ -61,6 +61,8 @@ class PhotoInfo:
 
             if tags['GPS GPSTrackRef'].values[0] == "T":
                 track = self.float_value(tags['GPS GPSTrack'])
+                if track == 0:
+                    track = 180 + self.float_value(tags['GPS GPSImgDirection'])
             else:
                 raise ValueError(f"Unknown GPS Track Ref: {tags['GPS GPSTrackRef']}")
             self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
@@ -224,6 +226,9 @@ class Batcher:
                 if photo.lat is None or photo.lon is None:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
+                if photo.groundspeed is None:
+                    print(f"Photo {filename} had no velocity metadata, will not use for mosaic")
+                    continue
                 # detect_features(filename)
                 self.photo_queue.put(photo)
 
@@ -255,46 +260,45 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
         global dataset_num
         dataset_num += 1
 
-        print(f"saving {KML_NAME}: {dataset_num}")
+        # print(f"saving {KML_NAME}: {dataset_num}")
 
-        with open(KML_NAME, mode='a') as f:
-            f.write('  <Placemark>\n')
-            f.write(f'    <name>{dataset_num}</name>\n')
-            f.write('    <LineString>\n')
-            # f.write('      <altitudeMode>absolute</altitudeMode>\n')
-            f.write('      <coordinates>\n')
-            for photo in photos:
-                f.write(f'        {photo.lon},{photo.lat}\n')
-            f.write('      </coordinates>\n')
-            f.write('    </LineString>\n')
-            f.write('  </Placemark>\n')
+        # with open(KML_NAME, mode='a') as f:
+        #     f.write('  <Placemark>\n')
+        #     f.write(f'    <name>{dataset_num}</name>\n')
+        #     f.write('    <LineString>\n')
+        #     # f.write('      <altitudeMode>absolute</altitudeMode>\n')
+        #     f.write('      <coordinates>\n')
+        #     for photo in photos:
+        #         f.write(f'        {photo.lon},{photo.lat}\n')
+        #     f.write('      </coordinates>\n')
+        #     f.write('    </LineString>\n')
+        #     f.write('  </Placemark>\n')
 
-        print(f"saved {KML_NAME}: {dataset_num}")
+        # print(f"saved {KML_NAME}: {dataset_num}")
 
-        # image_dir = "images"
-        # opensfm_dir = "opensfm"
-        # features_dir = os.path.join(opensfm_dir, "features")
-        # output_tar = "dataset.tar"
+        image_dir = "images"
+        opensfm_dir = "opensfm"
+        features_dir = os.path.join(opensfm_dir, "features")
+        output_tar = f"dataset{dataset_num}.tar"
         # fd, output_tar = mkstemp(".tar")
 
-        # with 
 
-        # with os.fdopen(fd, 'wb') as f:
-        #     with tarfile.open(fileobj=f, mode='w') as tar:
+        with open(output_tar, 'wb') as f:
+            with tarfile.open(fileobj=f, mode='w') as tar:
 
-        #         for photo in photos:
-        #             tar.add(photo.filename, arcname=os.path.join(image_dir, os.path.basename(photo.filename)))
-        #             features_filepath = photo.filename + ".npz"
-        #             if os.path.exists(features_filepath):
-        #                 tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
+                for i, photo in enumerate(photos):
+                    tar.add(photo.filename, arcname=os.path.join(image_dir, f"{i}.jxl"))
+                    # features_filepath = photo.filename + ".npz"
+                    # if os.path.exists(features_filepath):
+                    #     tar.add(features_filepath, arcname=os.path.join(features_dir, os.path.basename(features_filepath)))
 
-        #         stats_dir = os.path.join(opensfm_dir, "stats")
-        #         stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
-        #         stats_file_info.size = 0
-        #         tar.addfile(stats_file_info, fileobj=io.BytesIO())
-        # print(f"Saved dataset to {output_tar}")
-        # bucket_name = get_bucket_name(photos[0])
-        # dataset_name = get_dataset_name(photos)
+                stats_dir = os.path.join(opensfm_dir, "stats")
+                stats_file_info = tarfile.TarInfo(name=os.path.join(stats_dir, "stats.json"))
+                stats_file_info.size = 0
+                tar.addfile(stats_file_info, fileobj=io.BytesIO())
+        print(f"Saved dataset to {output_tar}")
+        bucket_name = get_bucket_name(photos[0])
+        dataset_name = get_dataset_name(photos)
         # cloud_storage.upload(bucket_name, output_tar, dataset_name)
         # vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
         # cloud_run_jobs.run_job(job_name=os.environ['MOSAIC_JOB_NAME'], vars=vars)
@@ -303,6 +307,26 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
 
 
 def main():
+    photos = []
+    dirs = ["/images2", "/images3", "/images4"]
+    subdirs = ["", "/1000", "/2000", "/3000"]
+    for dir in dirs:
+        for subdir in subdirs:
+            for f in glob.glob(f"{dir}{subdir}/*.jxl"):
+                photo = PhotoInfo(f)
+                photos.append(photo)
+
+    photos.sort(key = lambda x: x.t_utc)
+
+    batcher = Batcher()
+
+    for photo in photos:
+        # print(photo.filename)
+        batcher.on_new_file(photo.filename)
+
+    print("Done!")
+
+def main_kml():
 
     with open(KML_NAME, 'w') as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
