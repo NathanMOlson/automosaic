@@ -98,8 +98,25 @@ def combine_kmls(kml1_name: str, kml2_name: str, output_name: str) -> None:
         f.write(etree.tostring(doc, pretty_print=True))
 
 
-def do_bboxes_intersect(bb1, bb2) -> bool:
+def do_bboxes_intersect(bb1: rasterio.coords.BoundingBox, bb2: rasterio.coords.BoundingBox) -> bool:
     return not rasterio.coords.disjoint_bounds(bb1, bb2)
+
+
+def bbox_union(bb1: rasterio.coords.BoundingBox, bb2: rasterio.coords.BoundingBox) -> rasterio.coords.BoundingBox:
+    return rasterio.coords.BoundingBox(left=min(bb1.left, bb2.left),
+                                       bottom=min(bb1.bottom, bb2.bottom),
+                                       right=max(bb1.right, bb2.right),
+                                       top=max(bb1.top, bb2.top))
+
+
+def make_bbox_placemark(bbox: rasterio.coords.BoundingBox):
+    coords_str = f"{bbox.left},{bbox.top}\n"
+    coords_str += f"{bbox.right},{bbox.top}\n"
+    coords_str += f"{bbox.right},{bbox.bottom}\n"
+    coords_str += f"{bbox.left},{bbox.bottom}\n"
+    coords_str += f"{bbox.left},{bbox.top}"
+    return KML.Placemark(KML.Polygon(KML.outerBoundaryIs(KML.LinearRing(KML.coordinates(coords_str)))),
+                         KML.styleUrl("boundsStyle"))
 
 
 with rasterio.open(tiff_path) as src:
@@ -126,7 +143,12 @@ try:
     with open(current_month_kml_name) as f:
         current_month_kml = parser.parse(f).getroot()
 except FileNotFoundError:
-    current_month_kml = KML.kml(KML.Document())
+    current_month_kml = KML.kml(KML.Document(KML.Style(KML.LineStyle(KML.color("ffaaaaaa"),
+                                                                     KML.width(4)),
+                                                       KML.PolyStyle(KML.color("55555555"),
+                                                                     KML.fill(0),
+                                                                     KML.outline(1)),
+                                                       id="boundsStyle")))
 
 
 new_view_network_link = KML.NetworkLink(KML.Link(KML.href(output_file)))
@@ -140,12 +162,18 @@ for region in current_month_kml.Document.findall('.//{http://www.opengis.net/kml
                                                 top=lla_box.find('{http://www.opengis.net/kml/2.2}north'))
     if do_bboxes_intersect(bounds, existing_bbox):
         found_match = True
-        # TODO: update bbox
+        new_bbox = bbox_union(bounds, existing_bbox)
+        lla_box.west = new_bbox.left
+        lla_box.south = new_bbox.bottom
+        lla_box.east = new_bbox.right
+        lla_box.north = new_bbox.top
+        region.getparent().Placemark = make_bbox_placemark(new_bbox)
         region.getparent().append(new_view_network_link)
         break
 
 if not found_match:
     current_month_kml.Document.append(KML.Folder(KML.name(incident_name),
+                                                 make_bbox_placemark(bounds),
                                                  KML.Region(KML.LatLonAltBox(KML.north(bounds.top),
                                                                              KML.south(bounds.bottom),
                                                                              KML.east(bounds.right),
