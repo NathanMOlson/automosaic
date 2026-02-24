@@ -16,11 +16,13 @@ Batcher uses Docker and is compatible with Google Cloud Run, which allows it to 
 
 ### Configuration
 
-Batcher is configured using the following environment varaibles:
+Batcher is configured using the following environment variables:
 
 `STORAGE_BUCKET`: Google Storage bucket for image and dataset 
 
-`MOSAIC_JOB_NAME`: Name of the Google Cloud function to run on collected 
+`MOSAIC_JOB_NAME`: Name of the Google Cloud function to run on collected dataset
+
+`MAX_DATASET_TIME_SECONDS`: Max amount of time to collect images for before stitching (defaults to 900 seconds)
 
 `KEEPALIVE_SECONDS`: How long to keep the server alive for when no images are being received (defaults to 60 if unspecified)
 

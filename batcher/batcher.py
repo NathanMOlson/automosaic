@@ -180,7 +180,7 @@ class Batcher:
 
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         min_orbit_radius = photo.groundspeed*photo.groundspeed/9.81  # assume 45 deg max bank
-        max_dataset_time = 900
+        max_dataset_time = float(os.environ.get("MAX_DATASET_TIME_SECONDS", 900))
         start_index = None
 
         if photo.t_utc - self.photos[0].t_utc > max_dataset_time:
