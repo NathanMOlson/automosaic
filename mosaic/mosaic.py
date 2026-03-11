@@ -28,12 +28,12 @@ from lightning_ortho import LightningOrtho
 
 def main():
     bucket_name = os.getenv("BUCKET")
+    dataset_name = os.getenv("DATASET", "/datasets/test.tar")
     if bucket_name:
-        dataset_name = os.environ["DATASET"]
         print(f"Downloading {dataset_name} from {bucket_name}")
         dataset_archive = cloud_storage.download(bucket_name=bucket_name, remote_blob_name=dataset_name)
     else:
-        with open("/datasets/test.tar", "rb") as f:
+        with open(dataset_name, "rb") as f:
             dataset_archive = f.read()
 
     dataset_dir = "/dataset"
