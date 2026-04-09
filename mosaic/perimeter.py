@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import sys
 import rasterio
 import rasterio.warp
 import numpy as np
@@ -33,8 +34,9 @@ from lxml import etree
 # -----------------------------------------
 # USER PARAMETERS
 # -----------------------------------------
-tiff_path = "/home/nathan/perimeter/20220719_2227MDT_Moose_Color.tiff"
-threshold_value = 128
+tiff_path = sys.argv[1]
+timestr_begin_kml = sys.argv[2]
+threshold_value = 3400
 perimeter_output = "/mnt/c/Users/natha/Downloads/perimeter.kml"
 active_output = "/mnt/c/Users/natha/Downloads/active.kml"
 current_month_kml_name = "current_month.kml"
@@ -43,7 +45,7 @@ current_month_kml_name = "current_month.kml"
 
 def make_polygons(binary_img: npt.NDArray, buffer_dist, dilate_radius, keep_points: bool) -> gpd.GeoDataFrame:
 
-    dilate1 = morphology.binary_dilation(binary_img, morphology.disk(dilate_radius))
+    dilate1 = morphology.binary_dilation(binary_img, morphology.disk(4))
     dilate1 = binary_fill_holes(dilate1)
 
     # EXTRACT BLOBS → POLYGONS
@@ -62,17 +64,24 @@ def make_polygons(binary_img: npt.NDArray, buffer_dist, dilate_radius, keep_poin
         if poly.is_valid and poly.area > 0:
             polygons.append(poly)
 
-    # UN-DILATE
-    buffered_polys = []
+    unbuffered_polys = []
     points = []
     for poly in polygons:
-        if poly.length < -16*buffer_dist and poly.area < 9*buffer_dist*buffer_dist:
-            if keep_points:
-                points.append(Point(poly.centroid))
-            continue
+        # if poly.length < -16*buffer_dist and poly.area < 9*buffer_dist*buffer_dist:
+        #     if keep_points:
+        #         points.append(Point(poly.centroid))
+        #     continue
         # buffer_dist = buffer_scale_factor * area
-        buffered_poly = poly.buffer(buffer_dist).simplify(-buffer_dist/4)
-        buffered_polys.append(buffered_poly)
+        buffered_poly = poly.buffer(-buffer_dist)
+        unbuffered_polys.append(buffered_poly)
+    unbuffered_polys = [unary_union(unbuffered_polys)]
+    # UN-DILATE
+    buffered_polys = []
+    for polys in unbuffered_polys:
+        for poly in polys.geoms:
+            # buffer_dist = buffer_scale_factor * area
+            buffered_poly = Polygon(poly.exterior).buffer(buffer_dist).simplify(5)
+            buffered_polys.append(buffered_poly)
     buffered_polys = [unary_union(buffered_polys)]
     if points:
         buffered_polys.append(MultiPoint(points))
@@ -106,12 +115,13 @@ def combine_kmls(kml1_name: str, kml2_name: str, timestr_kml: str, output_name: 
         name = pm.attrib.get('id').split('.')[0]
         pm.insert(0, KML.name(name))
         pm.insert(1, KML.styleUrl("perimeterStyle"))
-        pm.insert(2, KML.TimeStamp(KML.when(timestr_kml),))
+        pm.insert(2, KML.TimeSpan(KML.begin(timestr_begin_kml), KML.end(timestr_kml)))
         doc.append(pm)
     for pm in kml2.findall('.//{http://www.opengis.net/kml/2.2}Placemark'):
         name = pm.attrib.get('id').split('.')[0]
         pm.insert(0, KML.name(name))
         pm.insert(1, KML.styleUrl("activeStyle"))
+        pm.insert(2, KML.TimeSpan(KML.begin(timestr_begin_kml), KML.end(timestr_kml)))
         doc.append(pm)
 
     with open(output_name, "wb") as f:
@@ -139,6 +149,7 @@ def make_bbox_placemark(bbox: rasterio.coords.BoundingBox):
                          KML.styleUrl("boundsStyle"))
 
 
+print("reading tiff")
 with rasterio.open(tiff_path) as src:
     img = src.read(1)
     transform = src.transform
@@ -149,19 +160,25 @@ with rasterio.open(tiff_path) as src:
     timestr = timestr_tiff.replace(" ", "_").replace(":", "-")
     timestr_kml = timestr_tiff.replace(" ", "T").replace(":", "-", 2)
 
+print("thresholding")
 binary = img > threshold_value
 
-perimeter = make_polygons(binary, buffer_dist=-0.0005, dilate_radius=10, keep_points=False)
+print("making perimeter")
+perimeter = make_polygons(binary, buffer_dist=-200, dilate_radius=4, keep_points=False)
 perimeter.to_file(perimeter_output, driver="KML")
-active = make_polygons(binary, buffer_dist=-0.0002, dilate_radius=4, keep_points=True)
+
+print("making active fire")
+active = make_polygons(binary, buffer_dist=-20, dilate_radius=4, keep_points=True)
 active.to_file(active_output, driver="KML")
 
 centroid = perimeter.geometry.centroid.to_crs(4326)
 incident_name = pgh.encode(centroid.y[0], centroid.x[0], precision=8)
 output_file = f"{incident_name}_{timestr}.kml"
 
+print("combining KMLs")
 combine_kmls(perimeter_output, active_output, timestr_kml, output_file)
 
+print("updating superKML")
 try:
     with open(current_month_kml_name) as f:
         current_month_kml = parser.parse(f).getroot()
