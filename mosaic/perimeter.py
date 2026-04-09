@@ -174,7 +174,8 @@ except FileNotFoundError:
                                                        id="boundsStyle")))
 
 
-new_view_network_link = KML.NetworkLink(KML.Link(KML.href(output_file)))
+new_view_network_link = KML.NetworkLink(KML.Link(KML.href(output_file)),
+                                        KML.name(timestr_tiff))
 
 found_match = False
 for region in current_month_kml.Document.findall('.//{http://www.opengis.net/kml/2.2}Region'):
