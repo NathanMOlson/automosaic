@@ -80,7 +80,7 @@ def make_polygons(binary_img: npt.NDArray, buffer_dist, dilate_radius, keep_poin
     return gpd.GeoDataFrame(geometry=buffered_polys, crs=crs)
 
 
-def combine_kmls(kml1_name: str, kml2_name: str, output_name: str) -> None:
+def combine_kmls(kml1_name: str, kml2_name: str, timestr_kml: str, output_name: str) -> None:
     with open(kml1_name) as f:
         kml1 = parser.parse(f)
     with open(kml2_name) as f:
@@ -106,6 +106,7 @@ def combine_kmls(kml1_name: str, kml2_name: str, output_name: str) -> None:
         name = pm.attrib.get('id').split('.')[0]
         pm.insert(0, KML.name(name))
         pm.insert(1, KML.styleUrl("perimeterStyle"))
+        pm.insert(2, KML.TimeStamp(KML.when(timestr_kml),))
         doc.append(pm)
     for pm in kml2.findall('.//{http://www.opengis.net/kml/2.2}Placemark'):
         name = pm.attrib.get('id').split('.')[0]
@@ -144,7 +145,9 @@ with rasterio.open(tiff_path) as src:
     crs = src.crs
     l, b, r, t = rasterio.warp.transform_bounds(crs, rasterio.crs.CRS.from_epsg(4326), src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top)
     bounds = rasterio.coords.BoundingBox(l, b, r, t)
-    timestr = src.tags().get("TIFFTAG_DATETIME").replace(" ", "_").replace(":", "-")
+    timestr_tiff = src.tags().get("TIFFTAG_DATETIME")
+    timestr = timestr_tiff.replace(" ", "_").replace(":", "-")
+    timestr_kml = timestr_tiff.replace(" ", "T").replace(":", "-", 2)
 
 binary = img > threshold_value
 
@@ -157,7 +160,7 @@ centroid = perimeter.geometry.centroid.to_crs(4326)
 incident_name = pgh.encode(centroid.y[0], centroid.x[0], precision=8)
 output_file = f"{incident_name}_{timestr}.kml"
 
-combine_kmls(perimeter_output, active_output, output_file)
+combine_kmls(perimeter_output, active_output, timestr_kml, output_file)
 
 try:
     with open(current_month_kml_name) as f:
