@@ -17,6 +17,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import rasterio
+import rasterio.warp
 import numpy as np
 import numpy.typing as npt
 from skimage import measure, morphology
@@ -141,7 +142,8 @@ with rasterio.open(tiff_path) as src:
     img = src.read(1)
     transform = src.transform
     crs = src.crs
-    bounds = src.bounds
+    l, b, r, t = rasterio.warp.transform_bounds(crs, rasterio.crs.CRS.from_epsg(4326), src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top)
+    bounds = rasterio.coords.BoundingBox(l, b, r, t)
     timestr = src.tags().get("TIFFTAG_DATETIME").replace(" ", "_").replace(":", "-")
 
 binary = img > threshold_value
@@ -151,7 +153,7 @@ perimeter.to_file(perimeter_output, driver="KML")
 active = make_polygons(binary, buffer_dist=-0.0002, dilate_radius=4, keep_points=True)
 active.to_file(active_output, driver="KML")
 
-centroid = perimeter.geometry.centroid
+centroid = perimeter.geometry.centroid.to_crs(4326)
 incident_name = pgh.encode(centroid.y[0], centroid.x[0], precision=8)
 output_file = f"{incident_name}_{timestr}.kml"
 
