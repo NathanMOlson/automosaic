@@ -32,10 +32,23 @@ jobs:
         with:
           string: ${{ github.repository }}
 
-      - name: Build and push Docker image
+      - id: usertolower
+        uses: ASzc/change-string-case-action@v6
+        with:
+          string: ${{ github.actor }}
+
+      - name: Build and push mosaic Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./mosaic/Dockerfile
           push: true
           tags: ghcr.io/${{ steps.tolower.outputs.lowercase }}:latest,ghcr.io/${{ steps.tolower.outputs.lowercase }}:${{ github.sha }}
+
+      - name: Build and push batcher Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./batcher/Dockerfile
+          push: true
+          tags: ghcr.io/${{ steps.usertolower.outputs.lowercase }}/batcher:latest,ghcr.io/${{ steps.usertolower.outputs.lowercase }}/batcher:${{ github.sha }}
