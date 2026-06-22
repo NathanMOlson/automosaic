@@ -27,6 +27,7 @@ import exifread
 import tarfile
 import cloud_storage
 import cloud_run_jobs
+import env
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -173,7 +174,8 @@ class Batcher:
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
         self.executor = ThreadPoolExecutor()
         self.input_future = self.executor.submit(self.input_task)
-        self.photo_future = self.executor.submit(self.photo_task)
+        if env.SEGMENTATION:
+            self.photo_future = self.executor.submit(self.photo_task)
 
     def check_for_orbit(self) -> bool:
         photo = self.photos[-1]
@@ -232,6 +234,12 @@ class Batcher:
                     print(f"Photo {filename} had no timestamp, discarding")
                     continue
                 save_image(photo)
+                if not env.SEGMENTATION:
+                    # Image is archived; with segmentation off nothing downstream
+                    # needs the local copy. Drop it so tmpfs (RAM-backed on Cloud
+                    # Run) does not fill up.
+                    os.remove(filename)
+                    continue
                 if photo.lat is None or photo.lon is None:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
