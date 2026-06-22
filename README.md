@@ -22,7 +22,7 @@ Batcher is configured using the following environment variables:
 
 `MOSAIC_JOB_NAME`: Name of the Google Cloud function to run on collected dataset
 
-`MAX_DATASET_TIME_SECONDS`: Max amount of time to collect images for before stitching (defaults to 900 seconds)
+`MAX_DATASET_TIME_SECONDS`: Max amount of time to collect images for before stitching (defaults to 300 seconds)
 
 `KEEPALIVE_SECONDS`: How long to keep the server alive for when no images are being received (defaults to 60 if unspecified)
 

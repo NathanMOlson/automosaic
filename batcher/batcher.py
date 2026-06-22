@@ -34,6 +34,10 @@ from datetime import datetime, timezone
 from tempfile import mkstemp
 
 
+def debug(msg: str):
+    print(f'{{"severity": "DEBUG", "message": "{msg}"}}')
+
+
 class PhotoInfo:
     def __init__(self, filename: str) -> None:
         self.filename = filename
@@ -156,14 +160,18 @@ def get_dataset_name(photos: list[PhotoInfo]) -> str:
 
 
 def save_image(image: PhotoInfo):
+    debug("Saving image...")
     bucket = get_bucket_name(image)
     for i in range(65536):
         dest = get_storage_name(image, i)
         try:
             cloud_storage.upload(bucket, image.filename, dest)
+            debug(f"...saved image {image.filename} to {bucket} as {dest}")
             return
         except FileExistsError as e:
-            print(f"failed to upload {image.filename} to {dest}: {e}")
+            print(f"failed to upload {image.filename} to {bucket} as {dest}: {e}")
+
+    print(f"failed to save {image.filename} to {bucket}: could not find a filename that doesn't already exist")
 
 
 class Batcher:
@@ -176,20 +184,23 @@ class Batcher:
         self.photo_future = self.executor.submit(self.photo_task)
 
     def check_for_orbit(self) -> bool:
+        debug("Checking for orbit...")
         photo = self.photos[-1]
 
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         min_orbit_radius = photo.groundspeed*photo.groundspeed/9.81  # assume 45 deg max bank
-        max_dataset_time = float(os.environ.get("MAX_DATASET_TIME_SECONDS", 900))
+        max_dataset_time = float(os.environ.get("MAX_DATASET_TIME_SECONDS", 300))
         start_index = None
 
         if photo.t_utc - self.photos[0].t_utc > max_dataset_time:
+            print("Max orbit time elapsed!")
             start_index = 0
         else:
             for i in range(len(self.photos) - 2, -1, -1):
                 other = self.photos[i]
                 if photo.t_utc - other.t_utc > max_dataset_time:
                     start_index = 0
+                    print("Max orbit time elapsed!")
                     break
                 if photo.serial_number != other.serial_number:
                     continue
@@ -202,9 +213,12 @@ class Batcher:
                     continue
                 if np.linalg.norm(d) < min_orbit_radius:
                     start_index = i
+                    print("Orbit detected!")
                     break
         if start_index is None:
+            debug("...no orbit detected")
             return False
+        debug("...orbit detected!")
 
         photos = []
         for i in range(start_index, len(self.photos)):
@@ -220,9 +234,10 @@ class Batcher:
 
     def input_task(self) -> None:
         while True:
-
             try:
+                debug("Waiting for input...")
                 filename = self.input_queue.get()
+                debug(f"...got input file: {filename}")
                 try:
                     photo = PhotoInfo(filename)
                 except ValueError as e:
@@ -236,14 +251,19 @@ class Batcher:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
                 detect_features(filename)
+                debug(f"Pushing {filename} to photo queue...")
                 self.photo_queue.put(photo)
+                debug(f"...Pushed {filename} to photo queue")
 
             except Exception as e:
                 print(f"Failed to add photo: {filename}: {e}")
 
     def photo_task(self) -> None:
+        print("Running photo task")
         while True:
+            debug("Waiting for photo...")
             photo = self.photo_queue.get()
+            debug(f"...got photo {photo.filename}")
             self.photos.append(photo)
             self.photos.sort(key=lambda x: x.t_utc)
             if self.check_for_orbit():
@@ -253,7 +273,10 @@ class Batcher:
 
 
 def detect_features(filename: str) -> None:
-    print("detecting features")
+    # This function is currently a stub.
+    # Precomputing features here will save processing time oveall,
+    # but we need to be careful not to slow down input processing.
+    debug(f"detecting features in {filename}")
 
 
 def assemble_dataset(photos: list[PhotoInfo]) -> None:
@@ -283,7 +306,9 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
         bucket_name = get_bucket_name(photos[0])
         dataset_name = get_dataset_name(photos)
         cloud_storage.upload(bucket_name, output_tar, dataset_name)
+        print(f"Uploaded dataset {output_tar} to {bucket_name} as {dataset_name}")
         vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
         cloud_run_jobs.run_job(job_name=os.environ['MOSAIC_JOB_NAME'], vars=vars)
+        print(f"Started job: {os.environ['MOSAIC_JOB_NAME']} with vars={vars}")
     except Exception as e:
         print(e)
