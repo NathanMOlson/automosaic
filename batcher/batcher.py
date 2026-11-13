@@ -51,6 +51,7 @@ class PhotoInfo:
         self.dir = None
         self.groundspeed = None
         self.serial_number = None
+        self.spectral_band = None
 
         try:
             self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
@@ -83,6 +84,12 @@ class PhotoInfo:
             self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
             self.dir = self.v / np.linalg.norm(self.v)
         except KeyError:
+            pass
+
+        try:
+            maker_note = tags['EXIF_MakerNote'].values
+            self.spectral_band = json.loads(maker_note)['spectral_band']
+        except:
             pass
 
     def dms_to_decimal(self, dms, sign):
@@ -135,8 +142,9 @@ def get_bucket_name(image: PhotoInfo) -> str:
 def get_storage_name(image: PhotoInfo, i: int) -> str:
     date_path = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    spectral_band_str = f"{image.spectral_band}_" if image.spectral_band is not None else ""
     if image.lat is not None and image.lon is not None:
-        name = f"images/{date_path}/{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+        name = f"images/{date_path}/{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
     else:
         name = f"images/{date_path}/{time_str}"
     if i > 0:
@@ -156,7 +164,8 @@ def get_dataset_name(photos: list[PhotoInfo]) -> str:
         lon += photo.lon / n
     date_path = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    return f"datasets/{date_path}/{time_str}_{lat:.5f}_{lon:.5f}.tar"
+    spectral_band_str = f"{photos[0].spectral_band}_" if photos[0].spectral_band is not None else ""
+    return f"datasets/{date_path}/{spectral_band_str}{time_str}_{lat:.5f}_{lon:.5f}.tar"
 
 
 def save_image(image: PhotoInfo):
