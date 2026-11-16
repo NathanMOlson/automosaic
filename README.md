@@ -60,6 +60,26 @@ One proven way to deploy this functionality to the cloud is shown below.
 
 <img src="example_deployment.png" style="max-width:640px">
 
+## Test
+
+The Test application can be used to test a cloud deployment by uploading images to a specified URL. 
+
+### Building
+
+Test uses Docker and is compatible with Google Cloud Run Function. Invoke it manually to test the automosaic pipeline
+
+```docker build . -f test/Dockerfile  -t automosaic_test```
+
+### Configuration
+
+Test is configured using the following environment variables:
+
+`BUCKET`: Google Storage bucket for input dataset
+
+`DATASET`: Path relative to `BUCKET` for input dataset. Should be a .tar file
+
+`BATCHER_URL`: URL to send images to
+
 ## License
 
 This software is provided by Lab 308 under the [AGPL version 3](https://www.gnu.org/licenses/agpl-3.0.html).
