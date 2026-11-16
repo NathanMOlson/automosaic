@@ -52,6 +52,7 @@ class PhotoInfo:
         self.groundspeed = None
         self.serial_number = None
         self.spectral_band = None
+        self.camera_model = None
 
         try:
             self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
@@ -68,6 +69,11 @@ class PhotoInfo:
 
         try:
             self.serial_number = tags['EXIF BodySerialNumber'].values
+        except KeyError:
+            pass
+
+        try:
+            self.camera_model = tags['Image Model'].values
         except KeyError:
             pass
 
@@ -185,39 +191,40 @@ def save_image(image: PhotoInfo):
 
 class Batcher:
     def __init__(self) -> None:
-        self.photos: list[PhotoInfo] = []
+        self.photos: dict[str, list[PhotoInfo]] = {}
         self.input_queue: mp.Queue[str] = mp.Queue(1024)
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
         self.executor = ThreadPoolExecutor()
         self.input_future = self.executor.submit(self.input_task)
         self.photo_future = self.executor.submit(self.photo_task)
 
-    def check_for_orbit(self) -> bool:
+    def check_for_orbit(self, spectral_band: str) -> bool:
         debug("Checking for orbit...")
-        photo = self.photos[-1]
+        photos = self.photos[spectral_band]
+        photo = photos[-1]
 
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         min_orbit_radius = photo.groundspeed*photo.groundspeed/9.81  # assume 45 deg max bank
         max_dataset_time = float(os.environ.get("MAX_DATASET_TIME_SECONDS", 300))
         start_index = None
 
-        if photo.t_utc - self.photos[0].t_utc > max_dataset_time:
+        if photo.t_utc - photos[0].t_utc > max_dataset_time:
             print("Max orbit time elapsed!")
             start_index = 0
         else:
-            for i in range(len(self.photos) - 2, -1, -1):
-                other = self.photos[i]
-                if photo.t_utc - other.t_utc > max_dataset_time:
+            for i in range(len(photos) - 2, -1, -1):
+                start_candidate = photos[i]
+                if photo.t_utc - start_candidate.t_utc > max_dataset_time:
                     start_index = 0
                     print("Max orbit time elapsed!")
                     break
-                if photo.serial_number != other.serial_number:
+                if photo.serial_number != start_candidate.serial_number:
                     continue
-                if photo.t_utc - other.t_utc < min_orbit_time:
+                if photo.t_utc - start_candidate.t_utc < min_orbit_time:
                     continue
-                if np.dot(photo.dir, other.dir) < 0.7:
+                if np.dot(photo.dir, start_candidate.dir) < 0.7:
                     continue
-                d = approx_displacement(other, photo)
+                d = approx_displacement(start_candidate, photo)
                 if np.dot(photo.dir, d) <= 0:
                     continue
                 if np.linalg.norm(d) < min_orbit_radius:
@@ -229,10 +236,19 @@ class Batcher:
             return False
         debug("...orbit detected!")
 
-        photos = []
-        for i in range(start_index, len(self.photos)):
-            photos.append(self.photos[i])
-        assemble_dataset(photos)
+        for band, photo_list in self.photos.items():
+            start = start_index
+            if band != spectral_band:
+                start = 0
+                for i in range(0, len(photo_list)):
+                    if photo_list[i].t_utc > self.photos[spectal_band][start_index].t_utc:
+                        break
+                    start = i
+
+            photos = []
+            for i in range(start, len(photo_list)):
+                photos.append(photo_list[i])
+            assemble_dataset(photos)
 
         return True
 
@@ -273,12 +289,16 @@ class Batcher:
             debug("Waiting for photo...")
             photo = self.photo_queue.get()
             debug(f"...got photo {photo.filename}")
-            self.photos.append(photo)
-            self.photos.sort(key=lambda x: x.t_utc)
+            spectral_band = photo.spectral_band
+            if spectral_band not in self.photos:
+                self.photos[spectral_band] = []
+            self.photos[spectral_band].append(photo)
+            self.photos[spectral_band].sort(key=lambda x: x.t_utc)
             if self.check_for_orbit():
-                for photo in self.photos:
-                    os.remove(photo.filename)
-                self.photos = []
+                for photo_list in self.photos.values():
+                    for photo in photo_list:
+                        os.remove(photo.filename)
+                self.photos = {}
 
 
 def detect_features(filename: str) -> None:
