@@ -26,6 +26,8 @@ Batcher is configured using the following environment variables:
 
 `KEEPALIVE_SECONDS`: How long to keep the server alive for when no images are being received (defaults to 60 if unspecified)
 
+`SERVICE_URL`: The URL of the batcher service. This is needed for the keep-alive to work properly.
+
 ## Mosaic
 
 The Mosaic application assembles a group of images (a "dataset") int a wide-area orthophoto.
