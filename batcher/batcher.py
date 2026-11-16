@@ -159,7 +159,7 @@ def get_storage_name(image: PhotoInfo, i: int) -> str:
     return name
 
 
-def get_dataset_name(photos: list[PhotoInfo]) -> str:
+def get_dataset_name(photos: list[PhotoInfo], group_name: str|None) -> str:
     t = 0
     lat = 0
     lon = 0
@@ -170,8 +170,9 @@ def get_dataset_name(photos: list[PhotoInfo]) -> str:
         lon += photo.lon / n
     date_path = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    group_name_str = f"{group_name}_" if group_name is not None else ""
     spectral_band_str = f"{photos[0].spectral_band}_" if photos[0].spectral_band is not None else ""
-    return f"datasets/{date_path}/{spectral_band_str}{time_str}_{lat:.5f}_{lon:.5f}.tar"
+    return f"datasets/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{lat:.5f}_{lon:.5f}.tar"
 
 
 def save_image(image: PhotoInfo):
@@ -190,7 +191,8 @@ def save_image(image: PhotoInfo):
 
 
 class Batcher:
-    def __init__(self) -> None:
+    def __init__(self, group_name: str|None) -> None:
+        self.group_name = group_name
         self.photos: dict[str, list[PhotoInfo]] = {}
         self.input_queue: mp.Queue[str] = mp.Queue(1024)
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
@@ -248,7 +250,7 @@ class Batcher:
             photos = []
             for i in range(start, len(photo_list)):
                 photos.append(photo_list[i])
-            assemble_dataset(photos)
+            assemble_dataset(photos, self.group_name)
 
         return True
 
@@ -308,7 +310,7 @@ def detect_features(filename: str) -> None:
     debug(f"detecting features in {filename}")
 
 
-def assemble_dataset(photos: list[PhotoInfo]) -> None:
+def assemble_dataset(photos: list[PhotoInfo], group_name: str|None) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
 
@@ -333,7 +335,7 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
                 tar.addfile(stats_file_info, fileobj=io.BytesIO())
         print(f"Saved dataset to {output_tar}")
         bucket_name = get_bucket_name(photos[0])
-        dataset_name = get_dataset_name(photos)
+        dataset_name = get_dataset_name(photos, group_name)
         cloud_storage.upload(bucket_name, output_tar, dataset_name)
         print(f"Uploaded dataset {output_tar} to {bucket_name} as {dataset_name}")
         vars = {"BUCKET": bucket_name, "DATASET": dataset_name}
