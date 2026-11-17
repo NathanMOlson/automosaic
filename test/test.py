@@ -22,6 +22,8 @@ import glob
 import tarfile
 import cloud_storage
 import requests
+import google.auth.transport.requests
+import google.oauth2.id_token
 
 
 def main():
@@ -40,11 +42,17 @@ def main():
     with tarfile.open(fileobj=io.BytesIO(dataset_archive), mode="r") as tar:
         tar.extractall(path=dataset_dir)
 
+    id_token = google.oauth2.id_token.fetch_id_token(
+        google.auth.transport.requests.Request(),
+        batcher_url
+    )
+
     for filename in glob.glob(f"{dataset_dir}/images/*.jxl"):
         with open(filename, "rb") as f:
             response = requests.post(
                 batcher_url,
-                files={"file": f}
+                files={"file": f},
+                headers={"Authorization": f"Bearer {id_token}"}
             )
             print(f"Uploading {filename}, response: {response.status_code}: {response.text}")
 
