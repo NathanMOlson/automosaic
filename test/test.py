@@ -40,7 +40,7 @@ def main():
     with tarfile.open(fileobj=io.BytesIO(dataset_archive), mode="r") as tar:
         tar.extractall(path=dataset_dir)
 
-    for filename in glob.glob(f"{dataset_dir}/*.jxl"):
+    for filename in glob.glob(f"{dataset_dir}/images/*.jxl"):
         with open(filename, "rb") as f:
             response = requests.post(
                 batcher_url,
