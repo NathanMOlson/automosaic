@@ -145,12 +145,13 @@ def get_bucket_name(image: PhotoInfo) -> str:
     return os.environ['STORAGE_BUCKET']
 
 
-def get_storage_name(image: PhotoInfo, i: int) -> str:
+def get_storage_name(image: PhotoInfo, i: int, group_name: str) -> str:
     date_path = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
     spectral_band_str = f"{image.spectral_band}_" if image.spectral_band is not None else ""
+    group_name_str = f"{group_name}_" if group_name is not None else ""
     if image.lat is not None and image.lon is not None:
-        name = f"images/{date_path}/{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+        name = f"images/{date_path}/{group_str}{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
     else:
         name = f"images/{date_path}/{time_str}"
     if i > 0:
@@ -175,19 +176,20 @@ def get_dataset_name(photos: list[PhotoInfo], group_name: str|None) -> str:
     return f"datasets/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{lat:.5f}_{lon:.5f}.tar"
 
 
-def save_image(image: PhotoInfo):
+def save_image(image: PhotoInfo, group_name: str) -> str:
     debug("Saving image...")
     bucket = get_bucket_name(image)
     for i in range(65536):
-        dest = get_storage_name(image, i)
+        dest = get_storage_name(image, i, group_name)
         try:
             cloud_storage.upload(bucket, image.filename, dest)
             debug(f"...saved image {image.filename} to {bucket} as {dest}")
-            return
+            return dest.split("/")[-1]
         except FileExistsError as e:
             print(f"failed to upload {image.filename} to {bucket} as {dest}: {e}")
 
     print(f"failed to save {image.filename} to {bucket}: could not find a filename that doesn't already exist")
+    return image.filename
 
 
 class Batcher:
@@ -273,7 +275,10 @@ class Batcher:
                 if photo.t_utc is None:
                     print(f"Photo {filename} had no timestamp, discarding")
                     continue
-                save_image(photo)
+                new_filename = "/tmp/" + save_image(photo, self.group_name)
+                os.rename(filename, new_filename)
+                photo.filename = new_filename
+                debug(f"Renamed {filename} to {new_filename}")
                 if photo.lat is None or photo.lon is None:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
