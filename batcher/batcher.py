@@ -151,7 +151,7 @@ def get_storage_name(image: PhotoInfo, i: int, group_name: str) -> str:
     spectral_band_str = f"{image.spectral_band}_" if image.spectral_band is not None else ""
     group_name_str = f"{group_name}_" if group_name is not None else ""
     if image.lat is not None and image.lon is not None:
-        name = f"images/{date_path}/{group_str}{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+        name = f"images/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
     else:
         name = f"images/{date_path}/{time_str}"
     if i > 0:
