@@ -61,7 +61,7 @@ def upload():
 
 
 @app.route('/image/<string:group_name>', methods=['POST'])
-def upload(group_name):
+def upload_with_group(group_name):
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request'}), 400
 
