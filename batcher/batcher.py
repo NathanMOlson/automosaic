@@ -293,19 +293,23 @@ class Batcher:
     def photo_task(self) -> None:
         print("Running photo task")
         while True:
-            debug("Waiting for photo...")
-            photo = self.photo_queue.get()
-            debug(f"...got photo {photo.filename}")
-            spectral_band = photo.spectral_band
-            if spectral_band not in self.photos:
-                self.photos[spectral_band] = []
-            self.photos[spectral_band].append(photo)
-            self.photos[spectral_band].sort(key=lambda x: x.t_utc)
-            if self.check_for_orbit():
-                for photo_list in self.photos.values():
-                    for photo in photo_list:
-                        os.remove(photo.filename)
-                self.photos = {}
+            try:
+                debug("Waiting for photo...")
+                photo = self.photo_queue.get()
+                debug(f"...got photo {photo.filename}")
+                spectral_band = photo.spectral_band
+                if spectral_band not in self.photos:
+                    self.photos[spectral_band] = []
+                self.photos[spectral_band].append(photo)
+                self.photos[spectral_band].sort(key=lambda x: x.t_utc)
+                if self.check_for_orbit():
+                    for photo_list in self.photos.values():
+                        for photo in photo_list:
+                            os.remove(photo.filename)
+                    self.photos = {}
+            
+            except Exception as e:
+                print(e)
 
 
 def detect_features(filename: str) -> None:
