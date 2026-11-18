@@ -302,7 +302,7 @@ class Batcher:
                     self.photos[spectral_band] = []
                 self.photos[spectral_band].append(photo)
                 self.photos[spectral_band].sort(key=lambda x: x.t_utc)
-                if self.check_for_orbit():
+                if self.check_for_orbit(spectral_band):
                     for photo_list in self.photos.values():
                         for photo in photo_list:
                             os.remove(photo.filename)
