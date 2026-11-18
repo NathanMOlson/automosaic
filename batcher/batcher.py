@@ -160,7 +160,7 @@ def get_storage_name(image: PhotoInfo, i: int, group_name: str) -> str:
     return name
 
 
-def get_dataset_name(photos: list[PhotoInfo], group_name: str|None) -> str:
+def get_dataset_name(photos: list[PhotoInfo], group_name: str | None) -> str:
     t = 0
     lat = 0
     lon = 0
@@ -193,7 +193,7 @@ def save_image(image: PhotoInfo, group_name: str) -> str:
 
 
 class Batcher:
-    def __init__(self, group_name: str|None) -> None:
+    def __init__(self, group_name: str | None) -> None:
         self.group_name = group_name
         self.photos: dict[str, list[PhotoInfo]] = {}
         self.input_queue: mp.Queue[str] = mp.Queue(1024)
@@ -307,7 +307,7 @@ class Batcher:
                         for photo in photo_list:
                             os.remove(photo.filename)
                     self.photos = {}
-            
+
             except Exception as e:
                 print(e)
 
@@ -319,7 +319,7 @@ def detect_features(filename: str) -> None:
     debug(f"detecting features in {filename}")
 
 
-def assemble_dataset(photos: list[PhotoInfo], group_name: str|None) -> None:
+def assemble_dataset(photos: list[PhotoInfo], group_name: str | None) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
 
