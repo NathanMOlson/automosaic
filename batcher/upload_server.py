@@ -78,4 +78,4 @@ def upload_with_group(group_name):
     named_batchers[group_name].on_new_file(filepath)
     watchdog.poke()
 
-    return jsonify({'message': f'File {file.filename} saved to {filepath} in {group_name} batch'}), 200
+    return jsonify({'message': f'File {file.filename} saved to {filepath} in {group_name} group'}), 200

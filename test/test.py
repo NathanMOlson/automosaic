@@ -47,7 +47,7 @@ def main():
         batcher_url
     )
 
-    for filename in glob.glob(f"{dataset_dir}/images/*.jxl"):
+    for filename in sorted(glob.glob(f"{dataset_dir}/images/*.jxl")):
         with open(filename, "rb") as f:
             response = requests.post(
                 batcher_url,
