@@ -153,7 +153,7 @@ def get_storage_name(image: PhotoInfo, i: int, group_name: str) -> str:
     if image.lat is not None and image.lon is not None:
         name = f"images/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
     else:
-        name = f"images/{date_path}/{time_str}"
+        name = f"images/{date_path}/{group_name_str}{spectral_band_str}{time_str}"
     if i > 0:
         name += f"_{i}"
     name += "." + image.filename.split('.')[-1]
@@ -177,7 +177,7 @@ def get_dataset_name(photos: list[PhotoInfo], group_name: str | None) -> str:
 
 
 def save_image(image: PhotoInfo, group_name: str) -> str:
-    debug("Saving image...")
+    debug(f"Saving image in group {group_name}...")
     bucket = get_bucket_name(image)
     for i in range(65536):
         dest = get_storage_name(image, i, group_name)
