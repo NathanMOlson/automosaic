@@ -27,6 +27,7 @@ import exifread
 import tarfile
 import cloud_storage
 import cloud_run_jobs
+import json
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -95,9 +96,7 @@ class PhotoInfo:
         try:
             maker_note = tags['EXIF MakerNote'].values
             self.spectral_band = json.loads(maker_note)['spectral_band']
-            debug(f"Found spectral band {self.spectral_band} in maker note {maker_note}")
         except:
-            debug(f"No spectral band in maker note {maker_note}")
             pass
 
     def dms_to_decimal(self, dms, sign):
