@@ -266,7 +266,7 @@ class Batcher:
             try:
                 debug("Waiting for input...")
                 filename = self.input_queue.get()
-                debug(f"...got input file: {filename}")
+                debug(f"...got input file: {filename} in group {self.group_name}")
                 try:
                     photo = PhotoInfo(filename)
                 except ValueError as e:
