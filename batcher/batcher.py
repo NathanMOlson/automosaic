@@ -42,7 +42,7 @@ class PhotoInfo:
     def __init__(self, filename: str) -> None:
         self.filename = filename
         with open(filename, 'rb') as f:
-            tags = exifread.process_file(f, details=False, extract_thumbnail=False)
+            tags = exifread.process_file(f, extract_thumbnail=False)
 
         self.lat = None
         self.lon = None
@@ -93,9 +93,8 @@ class PhotoInfo:
             pass
 
         try:
-            maker_note = tags['EXIF_MakerNote'].values
+            maker_note = tags['EXIF MakerNote'].values
             self.spectral_band = json.loads(maker_note)['spectral_band']
-            debug(f"Found spectral band {self.spectral_band} in maker note {maker_note}")
         except:
             pass
 
