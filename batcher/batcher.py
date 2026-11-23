@@ -246,7 +246,7 @@ class Batcher:
             if band != spectral_band:
                 start = 0
                 for i in range(0, len(photo_list)):
-                    if photo_list[i].t_utc > self.photos[spectal_band][start_index].t_utc:
+                    if photo_list[i].t_utc > self.photos[spectral_band][start_index].t_utc:
                         break
                     start = i
 
