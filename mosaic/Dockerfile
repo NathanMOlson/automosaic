@@ -1,4 +1,4 @@
-FROM ghcr.io/nathanmolson/odm:642f3115ba24a27fcba45e0cd42ceb6d653925e7
+FROM ghcr.io/nathanmolson/odm:550c997a3de7982c360f94a4213afa18c8659db4
 
 WORKDIR /code
 COPY mosaic/requirements.txt ./

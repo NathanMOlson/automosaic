@@ -52,3 +52,11 @@ jobs:
           file: ./batcher/Dockerfile
           push: true
           tags: ghcr.io/${{ steps.usertolower.outputs.lowercase }}/batcher:latest,ghcr.io/${{ steps.usertolower.outputs.lowercase }}/batcher:${{ github.sha }}
+
+      - name: Build and push batcher Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./test/Dockerfile
+          push: true
+          tags: ghcr.io/${{ steps.usertolower.outputs.lowercase }}/automosaic_test:latest,ghcr.io/${{ steps.usertolower.outputs.lowercase }}/automosaic_test:${{ github.sha }}

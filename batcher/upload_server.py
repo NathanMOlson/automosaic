@@ -24,12 +24,15 @@ from batcher import Batcher
 from keepalive import KeepAlive
 
 app = Flask(__name__)
-batcher = Batcher()
-watchdog = KeepAlive("https://batcher-436396529778.us-west1.run.app", float(os.environ["KEEPALIVE_SECONDS"]))
+batcher = Batcher(None)
+named_batchers = {}
+watchdog = KeepAlive(os.environ["SERVICE_URL"], float(os.environ["KEEPALIVE_SECONDS"]))
+
 
 @app.route("/")
 def hello():
     return "Lab 308 Upload Server"
+
 
 @app.route("/keepalive")
 def keepalive():
@@ -37,13 +40,14 @@ def keepalive():
     time.sleep(2)
     return ""
 
-@app.route('/image', methods = ['POST'])
+
+@app.route('/image', methods=['POST'])
 def upload():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request'}), 400
-    
+
     file = request.files['file']
-    
+
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
@@ -54,3 +58,24 @@ def upload():
     watchdog.poke()
 
     return jsonify({'message': f'File {file.filename} saved to {filepath}'}), 200
+
+
+@app.route('/image/<string:group_name>', methods=['POST'])
+def upload_with_group(group_name):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part in the request'}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    fd, filepath = mkstemp(os.path.splitext(file.filename)[1])
+    with os.fdopen(fd, 'wb') as f:
+        file.save(f)
+    if group_name not in named_batchers:
+        named_batchers[group_name] = Batcher(group_name)
+    named_batchers[group_name].on_new_file(filepath)
+    watchdog.poke()
+
+    return jsonify({'message': f'File {file.filename} saved to {filepath} in {group_name} group'}), 200

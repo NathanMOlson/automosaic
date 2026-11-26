@@ -27,6 +27,7 @@ import exifread
 import tarfile
 import cloud_storage
 import cloud_run_jobs
+import json
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -42,7 +43,7 @@ class PhotoInfo:
     def __init__(self, filename: str) -> None:
         self.filename = filename
         with open(filename, 'rb') as f:
-            tags = exifread.process_file(f, details=False, extract_thumbnail=False)
+            tags = exifread.process_file(f, extract_thumbnail=False)
 
         self.lat = None
         self.lon = None
@@ -51,6 +52,8 @@ class PhotoInfo:
         self.dir = None
         self.groundspeed = None
         self.serial_number = None
+        self.spectral_band = None
+        self.camera_model = None
 
         try:
             self.lat = self.dms_to_decimal(tags['GPS GPSLatitude'], tags['GPS GPSLatitudeRef'])
@@ -71,6 +74,11 @@ class PhotoInfo:
             pass
 
         try:
+            self.camera_model = tags['Image Model'].values
+        except KeyError:
+            pass
+
+        try:
             if tags['GPS GPSSpeedRef'].values[0] == "K":
                 self.groundspeed = self.float_value(tags['GPS GPSSpeed'])*1000/3600
             else:
@@ -83,6 +91,12 @@ class PhotoInfo:
             self.v = self.groundspeed*np.array([math.cos(math.radians(track)), math.sin(math.radians(track))])
             self.dir = self.v / np.linalg.norm(self.v)
         except KeyError:
+            pass
+
+        try:
+            maker_note = tags['EXIF MakerNote'].values
+            self.spectral_band = json.loads(maker_note)['spectral_band']
+        except:
             pass
 
     def dms_to_decimal(self, dms, sign):
@@ -132,20 +146,22 @@ def get_bucket_name(image: PhotoInfo) -> str:
     return os.environ['STORAGE_BUCKET']
 
 
-def get_storage_name(image: PhotoInfo, i: int) -> str:
+def get_storage_name(image: PhotoInfo, i: int, group_name: str) -> str:
     date_path = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(image.t_utc, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    spectral_band_str = f"{image.spectral_band}_" if image.spectral_band is not None else ""
+    group_name_str = f"{group_name}_" if group_name is not None else ""
     if image.lat is not None and image.lon is not None:
-        name = f"images/{date_path}/{time_str}_{image.lat:.5f}_{image.lon:.5f}"
+        name = f"images/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{image.lat:.5f}_{image.lon:.5f}"
     else:
-        name = f"images/{date_path}/{time_str}"
+        name = f"images/{date_path}/{group_name_str}{spectral_band_str}{time_str}"
     if i > 0:
         name += f"_{i}"
     name += "." + image.filename.split('.')[-1]
     return name
 
 
-def get_dataset_name(photos: list[PhotoInfo]) -> str:
+def get_dataset_name(photos: list[PhotoInfo], group_name: str | None) -> str:
     t = 0
     lat = 0
     lon = 0
@@ -156,59 +172,64 @@ def get_dataset_name(photos: list[PhotoInfo]) -> str:
         lon += photo.lon / n
     date_path = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y/%m/%d")
     time_str = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    return f"datasets/{date_path}/{time_str}_{lat:.5f}_{lon:.5f}.tar"
+    group_name_str = f"{group_name}_" if group_name is not None else ""
+    spectral_band_str = f"{photos[0].spectral_band}_" if photos[0].spectral_band is not None else ""
+    return f"datasets/{date_path}/{group_name_str}{spectral_band_str}{time_str}_{lat:.5f}_{lon:.5f}.tar"
 
 
-def save_image(image: PhotoInfo):
-    debug("Saving image...")
+def save_image(image: PhotoInfo, group_name: str) -> str:
+    debug(f"Saving image in group {group_name}...")
     bucket = get_bucket_name(image)
     for i in range(65536):
-        dest = get_storage_name(image, i)
+        dest = get_storage_name(image, i, group_name)
         try:
             cloud_storage.upload(bucket, image.filename, dest)
             debug(f"...saved image {image.filename} to {bucket} as {dest}")
-            return
+            return dest.split("/")[-1]
         except FileExistsError as e:
             print(f"failed to upload {image.filename} to {bucket} as {dest}: {e}")
 
     print(f"failed to save {image.filename} to {bucket}: could not find a filename that doesn't already exist")
+    return image.filename
 
 
 class Batcher:
-    def __init__(self) -> None:
-        self.photos: list[PhotoInfo] = []
+    def __init__(self, group_name: str | None) -> None:
+        self.group_name = group_name
+        self.photos: dict[str, list[PhotoInfo]] = {}
         self.input_queue: mp.Queue[str] = mp.Queue(1024)
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
         self.executor = ThreadPoolExecutor()
         self.input_future = self.executor.submit(self.input_task)
         self.photo_future = self.executor.submit(self.photo_task)
 
-    def check_for_orbit(self) -> bool:
+    def check_for_orbit(self, spectral_band: str) -> bool:
         debug("Checking for orbit...")
-        photo = self.photos[-1]
+        photos = self.photos[spectral_band]
+        photo = photos[-1]
 
         min_orbit_time = 2*math.pi*photo.groundspeed/9.81  # assume 45 deg max bank
         min_orbit_radius = photo.groundspeed*photo.groundspeed/9.81  # assume 45 deg max bank
         max_dataset_time = float(os.environ.get("MAX_DATASET_TIME_SECONDS", 300))
         start_index = None
 
-        if photo.t_utc - self.photos[0].t_utc > max_dataset_time:
+        if photo.t_utc - photos[0].t_utc > max_dataset_time:
             print("Max orbit time elapsed!")
             start_index = 0
         else:
-            for i in range(len(self.photos) - 2, -1, -1):
-                other = self.photos[i]
-                if photo.t_utc - other.t_utc > max_dataset_time:
+            for i in range(len(photos) - 2, -1, -1):
+                start_candidate = photos[i]
+                if photo.t_utc - start_candidate.t_utc > max_dataset_time:
                     start_index = 0
                     print("Max orbit time elapsed!")
                     break
-                if photo.serial_number != other.serial_number:
+                if photo.serial_number != start_candidate.serial_number:
                     continue
-                if photo.t_utc - other.t_utc < min_orbit_time:
+                if photo.t_utc - start_candidate.t_utc < min_orbit_time:
                     continue
-                if np.dot(photo.dir, other.dir) < 0.7:
+                if np.dot(photo.dir, start_candidate.dir) < 0.7:
                     continue
-                d = approx_displacement(other, photo)
+                d = approx_displacement(start_candidate, photo)
                 if np.dot(photo.dir, d) <= 0:
                     continue
                 if np.linalg.norm(d) < min_orbit_radius:
@@ -220,10 +241,19 @@ class Batcher:
             return False
         debug("...orbit detected!")
 
-        photos = []
-        for i in range(start_index, len(self.photos)):
-            photos.append(self.photos[i])
-        assemble_dataset(photos)
+        for band, photo_list in self.photos.items():
+            start = start_index
+            if band != spectral_band:
+                start = 0
+                for i in range(0, len(photo_list)):
+                    if photo_list[i].t_utc > self.photos[spectral_band][start_index].t_utc:
+                        break
+                    start = i
+
+            photos = []
+            for i in range(start, len(photo_list)):
+                photos.append(photo_list[i])
+            assemble_dataset(photos, self.group_name)
 
         return True
 
@@ -237,7 +267,7 @@ class Batcher:
             try:
                 debug("Waiting for input...")
                 filename = self.input_queue.get()
-                debug(f"...got input file: {filename}")
+                debug(f"...got input file: {filename} in group {self.group_name}")
                 try:
                     photo = PhotoInfo(filename)
                 except ValueError as e:
@@ -246,7 +276,10 @@ class Batcher:
                 if photo.t_utc is None:
                     print(f"Photo {filename} had no timestamp, discarding")
                     continue
-                save_image(photo)
+                new_filename = "/tmp/" + save_image(photo, self.group_name)
+                os.rename(filename, new_filename)
+                photo.filename = new_filename
+                debug(f"Renamed {filename} to {new_filename}")
                 if photo.lat is None or photo.lon is None:
                     print(f"Photo {filename} had no position metadata, will not use for mosaic")
                     continue
@@ -261,15 +294,23 @@ class Batcher:
     def photo_task(self) -> None:
         print("Running photo task")
         while True:
-            debug("Waiting for photo...")
-            photo = self.photo_queue.get()
-            debug(f"...got photo {photo.filename}")
-            self.photos.append(photo)
-            self.photos.sort(key=lambda x: x.t_utc)
-            if self.check_for_orbit():
-                for photo in self.photos:
-                    os.remove(photo.filename)
-                self.photos = []
+            try:
+                debug("Waiting for photo...")
+                photo = self.photo_queue.get()
+                debug(f"...got photo {photo.filename}")
+                spectral_band = photo.spectral_band
+                if spectral_band not in self.photos:
+                    self.photos[spectral_band] = []
+                self.photos[spectral_band].append(photo)
+                self.photos[spectral_band].sort(key=lambda x: x.t_utc)
+                if self.check_for_orbit(spectral_band):
+                    for photo_list in self.photos.values():
+                        for photo in photo_list:
+                            os.remove(photo.filename)
+                    self.photos = {}
+
+            except Exception as e:
+                print(e)
 
 
 def detect_features(filename: str) -> None:
@@ -279,7 +320,7 @@ def detect_features(filename: str) -> None:
     debug(f"detecting features in {filename}")
 
 
-def assemble_dataset(photos: list[PhotoInfo]) -> None:
+def assemble_dataset(photos: list[PhotoInfo], group_name: str | None) -> None:
     try:
         print(f"Assembling dataset from {len(photos)} photos")
 
@@ -304,7 +345,7 @@ def assemble_dataset(photos: list[PhotoInfo]) -> None:
                 tar.addfile(stats_file_info, fileobj=io.BytesIO())
         print(f"Saved dataset to {output_tar}")
         bucket_name = get_bucket_name(photos[0])
-        dataset_name = get_dataset_name(photos)
+        dataset_name = get_dataset_name(photos, group_name)
         cloud_storage.upload(bucket_name, output_tar, dataset_name)
         print(f"Uploaded dataset {output_tar} to {bucket_name} as {dataset_name}")
         vars = {"BUCKET": bucket_name, "DATASET": dataset_name}

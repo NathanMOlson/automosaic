@@ -26,6 +26,8 @@ Batcher is configured using the following environment variables:
 
 `KEEPALIVE_SECONDS`: How long to keep the server alive for when no images are being received (defaults to 60 if unspecified)
 
+`SERVICE_URL`: The URL of the batcher service. This is needed for the keep-alive to work properly.
+
 ## Mosaic
 
 The Mosaic application assembles a group of images (a "dataset") int a wide-area orthophoto.
@@ -57,6 +59,26 @@ The output will be saved in the Docker file at `/datasets/test.tiff`.
 One proven way to deploy this functionality to the cloud is shown below.
 
 <img src="example_deployment.png" style="max-width:640px">
+
+## Test
+
+The Test application can be used to test a cloud deployment by uploading images to a specified URL. 
+
+### Building
+
+Test uses Docker and is compatible with Google Cloud Run Function. Invoke it manually to test the automosaic pipeline
+
+```docker build . -f test/Dockerfile  -t automosaic_test```
+
+### Configuration
+
+Test is configured using the following environment variables:
+
+`BUCKET`: Google Storage bucket for input dataset
+
+`DATASET`: Path relative to `BUCKET` for input dataset. Should be a .tar file
+
+`BATCHER_URL`: URL to send images to
 
 ## License
 
