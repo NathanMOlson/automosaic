@@ -28,6 +28,7 @@ import tarfile
 import cloud_storage
 import cloud_run_jobs
 import json
+import env
 
 from tempfile import mkdtemp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -201,7 +202,8 @@ class Batcher:
         self.photo_queue: mp.Queue[PhotoInfo] = mp.Queue(1024)
         self.executor = ThreadPoolExecutor()
         self.input_future = self.executor.submit(self.input_task)
-        self.photo_future = self.executor.submit(self.photo_task)
+        if env.SEGMENTATION:
+            self.photo_future = self.executor.submit(self.photo_task)
 
     def check_for_orbit(self, spectral_band: str) -> bool:
         debug("Checking for orbit...")
@@ -277,6 +279,12 @@ class Batcher:
                     print(f"Photo {filename} had no timestamp, discarding")
                     continue
                 new_filename = "/tmp/" + save_image(photo, self.group_name)
+                if not env.SEGMENTATION:
+                    # Image is archived; with segmentation off nothing downstream
+                    # needs the local copy. Drop it so tmpfs (RAM-backed on Cloud
+                    # Run) does not fill up.
+                    os.remove(filename)
+                    continue
                 os.rename(filename, new_filename)
                 photo.filename = new_filename
                 debug(f"Renamed {filename} to {new_filename}")
